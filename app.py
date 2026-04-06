@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
-import os, httpx, json, csv, io
+import os, httpx, json, csv, io, re
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 load_dotenv()
 
@@ -13,37 +14,58 @@ app.secret_key = os.getenv("SECRET_KEY", "tsl-dev-secret-2025")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
-# ─── Supabase helper ─────────────────────────────────────────
+GALLERY_FOLDER    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images', 'gallery')
+GALLERY_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gallery_data.json')
+APPS_EXTRA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apps_extra.json')
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'avif', 'webp'}
+
+def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
+
+def load_events():
+    if not os.path.exists(GALLERY_DATA_FILE): return []
+    with open(GALLERY_DATA_FILE,'r',encoding='utf-8') as f: return json.load(f)
+
+def save_events(events):
+    with open(GALLERY_DATA_FILE,'w',encoding='utf-8') as f: json.dump(events,f,ensure_ascii=False,indent=2)
+
+def event_photos(key):
+    folder = os.path.join(GALLERY_FOLDER, key)
+    if not os.path.exists(folder): return []
+    photos = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder,f)) and allowed_file(f)]
+    photos.sort(key=lambda f: os.path.getmtime(os.path.join(folder,f)))
+    return photos
+
+def load_extra_apps():
+    if not os.path.exists(APPS_EXTRA_FILE): return []
+    with open(APPS_EXTRA_FILE,'r',encoding='utf-8') as f: return json.load(f)
+
+def save_extra_apps(data):
+    with open(APPS_EXTRA_FILE,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,indent=2)
+
 def sb(method, path, data=None, params=""):
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return []
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
+    if not SUPABASE_URL or not SUPABASE_KEY: return []
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
+               "Content-Type": "application/json", "Prefer": "return=representation"}
     url = f"{SUPABASE_URL}/rest/v1/{path}{params}"
     try:
         with httpx.Client(timeout=10) as c:
-            if method == "GET":     r = c.get(url, headers=headers)
-            elif method == "POST":  r = c.post(url, headers=headers, json=data)
-            elif method == "PATCH": r = c.patch(url, headers=headers, json=data)
-            elif method == "DELETE":r = c.delete(url, headers=headers)
+            if method=="GET":     r=c.get(url,headers=headers)
+            elif method=="POST":  r=c.post(url,headers=headers,json=data)
+            elif method=="PATCH": r=c.patch(url,headers=headers,json=data)
+            elif method=="DELETE":r=c.delete(url,headers=headers)
             else: return []
         return r.json() if r.text else []
     except Exception as e:
-        print(f"Supabase error: {e}")
-        return []
+        print(f"Supabase error: {e}"); return []
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "researcher" not in session:
-            return redirect(url_for("login"))
+        if "researcher" not in session: return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
 
+# ─── Site-wide ───────────────────────────────────────────────
 PROFESSOR = {
     "name":      "Yun-Jung Choi",
     "title":     "Professor",
@@ -80,33 +102,91 @@ TEAM = {
     ],
 }
 
+APPS_EXTRA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apps_extra.json')
+
+def load_extra_apps():
+    if not os.path.exists(APPS_EXTRA_FILE):
+        return []
+    with open(APPS_EXTRA_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def save_extra_apps(data):
+    with open(APPS_EXTRA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
 APPS = [
     {
-        "name":        "Mobile PLS",
-        "full_name":   "Psychological Life Skill",
-        "description": "A mobile app designed to help rescue workers recover their mental well-being after a disaster. Based on structured psychological life skill training.",
-        "screenshot":  "images/app_screenshot1.png",
-        "tags":        ["Disaster Workers", "Mental Health", "Neurofeedback"],
-        "android_url": None,
-        "ios_url":     None,
+        "key":       "pls",
+        "icon":      "🫀",
+        "gradient":  "linear-gradient(135deg,#00695c 0%,#26a69a 100%)",
+        "name":      "PLS",
+        "full_name": "Psychological Life Support",
+        "label":     "Mobile PFA Application",
+        "desc_kr":   "재난구호자를 위한 심리적인명구조술 PLS는\n재난상황에 대한 정보제공 및 심리적응급처치 기술 적용,\n재난 후 구호요원들의 마음회복을 돕기위한 앱입니다.",
+        "desc_en":   "PLS (Psychological Life Skill) for disaster relief workers is providing information on disaster situations and application of psychological first aid techniques. It is a mobile app to help rescue workers recover their minds after a disaster.",
+        "tags":      ["Disaster Workers", "Mental Health", "Psychological First Aid"],
+        "screenshot": None,
+        "content_img_kr": "images/pls_kr_content.avif",
+        "content_img_en": "images/pls_en_content.avif",
+        "dl_kr":  "https://m.onestore.co.kr/ko-kr/apps/appsDetail.omp?prodId=0000747597",
+        "dl_en":  "https://m.onestore.co.kr/ko-kr/apps/appsDetail.omp?prodId=0000747600",
+        "subsections": [],
     },
     {
-        "name":        "Mobile TLS",
-        "full_name":   "Training for Life Skills",
-        "description": "An app designed to support people psychologically affected by disaster damage. Provides structured skills training for trauma recovery.",
-        "screenshot":  "images/app_screenshot2.png",
-        "tags":        ["Disaster Survivors", "Trauma Recovery", "Skills Training"],
-        "android_url": None,
-        "ios_url":     None,
+        "key":       "tls",
+        "icon":      "🌿",
+        "gradient":  "linear-gradient(135deg,#1b5e20 0%,#66bb6a 100%)",
+        "name":      "TLS",
+        "full_name": "Training of Life Skills",
+        "label":     "Mobile PFA Application",
+        "desc_kr":   "재난경험자를 위한 마음치유기술 TLS (Training for Life Skills)는\n재난피해로 심리적 상처를 입은 분들의 심리회복을 돕기 위한 앱입니다.",
+        "desc_en":   "TLS (Training for Life Skills) for disaster experienced people is an app to help the psychological recovery of those who have been psychologically wounded by disaster damage.",
+        "tags":      ["Disaster Survivors", "Trauma Recovery", "Skills Training"],
+        "screenshot": None,
+        "content_img_kr": "images/tls_kr_content.avif",
+        "content_img_en": "images/tls_en_content.avif",
+        "dl_kr":  "https://m.onestore.co.kr/ko-kr/apps/appsDetail.omp?prodId=0000747598",
+        "dl_en":  "https://m.onestore.co.kr/ko-kr/apps/appsDetail.omp?prodId=0000747605",
+        "subsections": [],
     },
     {
-        "name":        "Mind Therapy",
-        "full_name":   "Neurofeedback Stress Management",
-        "description": "Combines neurofeedback and binaural beat music to help manage stress and improve mental health. Validated in a pilot RCT for traumatic stress management.",
-        "screenshot":  "images/app_screenshot3.png",
-        "tags":        ["Neurofeedback", "Binaural Beat", "Stress & PTSD"],
-        "android_url": None,
-        "ios_url":     None,
+        "key":       "mind_therapy",
+        "icon":      "🧠",
+        "gradient":  "linear-gradient(135deg,#311b92 0%,#9c27b0 100%)",
+        "name":      "Mind Therapy",
+        "full_name": "Neurofeedback Stress Management",
+        "label":     "",
+        "desc_kr":   "",
+        "desc_en":   "The 'Mind Therapy' application is designed to help people recover from traumatic events. Developed by applying EEG and heart rate variability technology, it can measure left-right brain balance, brain activity, and stress recovery through real-time EEG/heart rate variability tests.",
+        "tags":      ["Neurofeedback", "Binaural Beat", "Stress & PTSD"],
+        "screenshot": "images/app_screenshot3.png",
+        "content_img_kr": None,
+        "content_img_en": None,
+        "dl_kr":  None,
+        "dl_en":  None,
+        "subsections": [
+            {
+                "title": "Brain Therapy",
+                "image": "images/mt_brain_therapy.avif",
+                "desc":  "We offer a meditation program with neurofeedback and binaural beats.",
+                "links": [
+                    {"text": "Neurofeedback",  "url": None},
+                    {"text": "Binaural beats", "url": None},
+                ],
+            },
+            {
+                "title": "Autonomic Nerve Therapy",
+                "image": "images/mt_autonomic.avif",
+                "desc":  "The deep breathing and butterfly hug programs are prepared for your autonomic nervous system stabilization. Several options for deep breathing are provided — choose whatever you feel comfortable with. A video guide for the butterfly hug is also included.",
+                "links": [],
+            },
+            {
+                "title": "Brain Game",
+                "image": "images/mt_brain_game.avif",
+                "desc":  "We visually represent the response when alpha waves are enhanced to help train the brain waves. The balloon's face will change along with your alpha waves. Enhance alpha waves through an exciting game!",
+                "links": [],
+            },
+        ],
     },
 ]
 
@@ -214,17 +294,7 @@ COPYRIGHTS = [
     "기능성 게임 기반 심리적 응급처치 교육 프로그램 — 감염병",
 ]
 
-# ─── Helpers ─────────────────────────────────────────────────
-def _articles_by_year():
-    result = OrderedDict()
-    for pub in sorted(ARTICLES, key=lambda x: -x["year"]):
-        result.setdefault(pub["year"], []).append(pub)
-    return result
 
-
-# ─── Routes ──────────────────────────────────────────────────
-
-# ─── Helpers ─────────────────────────────────────────────────
 def _articles_by_year():
     result = OrderedDict()
     for pub in sorted(ARTICLES, key=lambda x: -x["year"]):
@@ -248,35 +318,138 @@ def team():
 @app.route("/publications")
 def publications():
     by_year = _articles_by_year()
-    return render_template("publications.html",
-                           publications_by_year=by_year,
-                           pub_years=list(by_year.keys()),
-                           copyrights=COPYRIGHTS)
+    return render_template("publications.html", publications_by_year=by_year,
+                           pub_years=list(by_year.keys()), copyrights=COPYRIGHTS)
 
 @app.route("/apps")
 def apps():
-    return render_template("apps.html", apps=APPS)
+    all_apps = APPS + load_extra_apps()
+    return render_template("apps.html", apps=all_apps)
 
-@app.route("/contact", methods=["GET", "POST"])
+@app.route("/apps/new", methods=["POST"])
+def apps_new():
+    name = request.form.get('name','').strip()
+    if not name: return redirect(url_for('apps'))
+    key = re.sub(r'[^a-z0-9_]','', name.lower().replace(' ','_'))
+    if not key: key = 'app'
+    extra = load_extra_apps()
+    taken = {a['key'] for a in APPS} | {a['key'] for a in extra}
+    base, n = key, 2
+    while key in taken: key = f"{base}_{n}"; n += 1
+    color_map = {
+        'teal':   'linear-gradient(135deg,#0F6B6B 0%,#1ec0c0 100%)',
+        'blue':   'linear-gradient(135deg,#1a237e 0%,#5c6bc0 100%)',
+        'purple': 'linear-gradient(135deg,#4a148c 0%,#9c27b0 100%)',
+        'green':  'linear-gradient(135deg,#1b5e20 0%,#66bb6a 100%)',
+        'orange': 'linear-gradient(135deg,#e65100 0%,#ff9800 100%)',
+    }
+    gradient = color_map.get(request.form.get('color','teal'), color_map['teal'])
+    app_entry = {'key':key,'icon':request.form.get('icon','📱'),'gradient':gradient,
+        'name':name,'full_name':request.form.get('full_name',''),'label':request.form.get('label',''),
+        'desc_kr':'','desc_en':request.form.get('desc_en',''),'tags':[],'screenshot':None,
+        'content_img_kr':None,'content_img_en':None,'dl_kr':None,'dl_en':None,'subsections':[],
+        'created_at':datetime.now().isoformat()[:10]}
+    extra.append(app_entry)
+    save_extra_apps(extra)
+    return redirect(url_for('app_detail', key=key))
+
+@app.route("/apps/<key>")
+def app_detail(key):
+    all_apps = APPS + load_extra_apps()
+    app_data = next((a for a in all_apps if a.get('key')==key), None)
+    if not app_data: return redirect(url_for('apps'))
+    return render_template("app_detail.html", app=app_data)
+
+@app.route("/contact", methods=["GET","POST"])
 def contact():
     sent = False
-    if request.method == "POST":
-        sent = True
+    if request.method == "POST": sent = True
     return render_template("contact.html", message_sent=sent)
 
-# ─── Auth routes ─────────────────────────────────────────────
+@app.route("/gallery")
+def gallery():
+    events = load_events()
+    for ev in events:
+        photos = event_photos(ev['key'])
+        ev['photo_count'] = len(photos)
+        ev['cover_photo'] = ev.get('cover') or (photos[0] if photos else None)
+    return render_template("gallery.html", events=events)
+
+@app.route("/gallery/new", methods=["POST"])
+def gallery_new():
+    title = request.form.get('title','').strip()
+    if not title: return redirect(url_for('gallery'))
+    key = re.sub(r'[^a-z0-9_]','', title.lower().replace(' ','_').replace('(','').replace(')',''))
+    if not key: key = 'event'
+    events = load_events()
+    existing = {e['key'] for e in events}
+    base, n = key, 2
+    while key in existing: key = f"{base}_{n}"; n += 1
+    ev = {'key':key,'title':title,'date':request.form.get('date',''),
+          'venue':request.form.get('venue',''),'description':request.form.get('description',''),
+          'cover':None,'created_at':datetime.now().isoformat()[:10]}
+    events.insert(0, ev)
+    save_events(events)
+    os.makedirs(os.path.join(GALLERY_FOLDER, key), exist_ok=True)
+    return redirect(url_for('gallery_event', key=key))
+
+@app.route("/gallery/<key>")
+def gallery_event(key):
+    events = load_events()
+    ev = next((e for e in events if e['key']==key), None)
+    if not ev: return redirect(url_for('gallery'))
+    photos = event_photos(key)
+    return render_template("gallery_event.html", event=ev, photos=photos)
+
+@app.route("/gallery/<key>/upload", methods=["POST"])
+def gallery_event_upload(key):
+    events = load_events()
+    ev = next((e for e in events if e['key']==key), None)
+    if not ev: return redirect(url_for('gallery'))
+    folder = os.path.join(GALLERY_FOLDER, key)
+    os.makedirs(folder, exist_ok=True)
+    changed = False
+    for file in request.files.getlist('photo'):
+        if file and file.filename and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            if filename:
+                file.save(os.path.join(folder, filename))
+                if not ev.get('cover'): ev['cover'] = filename; changed = True
+    if changed: save_events(events)
+    return redirect(url_for('gallery_event', key=key))
+
+@app.route("/gallery/<key>/delete/<filename>", methods=["POST"])
+def gallery_event_delete(key, filename):
+    safe = secure_filename(filename)
+    path = os.path.join(GALLERY_FOLDER, key, safe)
+    if os.path.exists(path): os.remove(path)
+    events = load_events()
+    ev = next((e for e in events if e['key']==key), None)
+    if ev and ev.get('cover')==safe:
+        remaining = event_photos(key)
+        ev['cover'] = remaining[0] if remaining else None
+        save_events(events)
+    return redirect(url_for('gallery_event', key=key))
+
+@app.route("/gallery/<key>/delete-event", methods=["POST"])
+def gallery_delete_event(key):
+    events = load_events()
+    save_events([e for e in events if e['key']!=key])
+    return redirect(url_for('gallery'))
+
+# ─── Auth ────────────────────────────────────────────────────
 RESEARCHER_ACCOUNTS = {
-    "caupsynr@gmail.com":       "tsl2025!",
-    "yunjungchoi@cau.ac.kr":    "tsl2025!",
+    "caupsynr@gmail.com":    "tsl2025!",
+    "yunjungchoi@cau.ac.kr": "tsl2025!",
 }
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
     error = None
     if request.method == "POST":
-        email    = request.form.get("email", "").strip()
-        password = request.form.get("password", "").strip()
-        if email in RESEARCHER_ACCOUNTS and RESEARCHER_ACCOUNTS[email] == password:
+        email    = request.form.get("email","").strip()
+        password = request.form.get("password","").strip()
+        if email in RESEARCHER_ACCOUNTS and RESEARCHER_ACCOUNTS[email]==password:
             session["researcher"] = email
             return redirect(url_for("portal"))
         error = "이메일 또는 비밀번호가 올바르지 않습니다."
@@ -287,100 +460,75 @@ def logout():
     session.clear()
     return redirect(url_for("home"))
 
-# ─── Researcher portal routes ─────────────────────────────────
+# ─── Researcher portal ───────────────────────────────────────
 @app.route("/portal")
 @login_required
 def portal():
-    participants = sb("GET", "participants", params="?select=*&order=enrolled_at.desc") or []
-    sessions     = sb("GET", "sessions",     params="?select=*&order=created_at.desc&limit=10") or []
+    participants = sb("GET","participants",params="?select=*&order=enrolled_at.desc") or []
+    sessions_all = sb("GET","sessions") or []
     stats = {
-        "participants": len(participants) if isinstance(participants, list) else 0,
-        "sessions":     len(sb("GET", "sessions") or []),
-        "apps":         len(set(p.get("app_type","") for p in participants if isinstance(participants, list))),
+        "participants": len(participants) if isinstance(participants,list) else 0,
+        "sessions":     len(sessions_all) if isinstance(sessions_all,list) else 0,
+        "apps":         len(set(p.get("app_type","") for p in participants if isinstance(participants,list))),
     }
-    return render_template("portal.html",
-                           researcher=session["researcher"],
-                           stats=stats,
-                           recent_sessions=sessions[:10],
-                           participants=participants)
+    recent_sessions = sb("GET","sessions",params="?select=*&order=created_at.desc&limit=10") or []
+    return render_template("portal.html", researcher=session["researcher"],
+                           stats=stats, recent_sessions=recent_sessions, participants=participants)
 
 @app.route("/portal/participants")
 @login_required
 def portal_participants():
-    participants = sb("GET", "participants", params="?select=*&order=enrolled_at.desc") or []
-    return render_template("portal_participants.html",
-                           researcher=session["researcher"],
-                           participants=participants)
+    participants = sb("GET","participants",params="?select=*&order=enrolled_at.desc") or []
+    return render_template("portal_participants.html", researcher=session["researcher"], participants=participants)
 
 @app.route("/portal/participants/add", methods=["POST"])
 @login_required
 def portal_add_participant():
-    data = {
-        "code":     request.form.get("code", "").strip(),
-        "app_type": request.form.get("app_type", "").strip(),
-    }
-    sb("POST", "participants", data=data)
+    sb("POST","participants",data={"code":request.form.get("code","").strip(),"app_type":request.form.get("app_type","").strip()})
     flash("참여자가 추가됐습니다.")
     return redirect(url_for("portal_participants"))
 
 @app.route("/portal/sessions")
 @login_required
 def portal_sessions():
-    sessions = sb("GET", "sessions", params="?select=*,participants(code,app_type)&order=created_at.desc") or []
-    return render_template("portal_sessions.html",
-                           researcher=session["researcher"],
-                           sessions=sessions)
+    sessions = sb("GET","sessions",params="?select=*,participants(code,app_type)&order=created_at.desc") or []
+    return render_template("portal_sessions.html", researcher=session["researcher"], sessions=sessions)
 
 @app.route("/portal/sessions/add", methods=["POST"])
 @login_required
 def portal_add_session():
-    notes = request.form.get("notes", "").strip()
-    pid   = request.form.get("participant_id", "").strip()
-    raw   = request.form.get("data", "").strip()
+    notes = request.form.get("notes","").strip()
+    pid   = request.form.get("participant_id","").strip()
+    raw   = request.form.get("data","").strip()
     try:    data_json = json.loads(raw) if raw else {}
     except: data_json = {"raw": raw}
-    sb("POST", "sessions", data={"participant_id": pid, "notes": notes, "data": data_json})
+    sb("POST","sessions",data={"participant_id":pid,"notes":notes,"data":data_json})
     flash("세션이 추가됐습니다.")
     return redirect(url_for("portal_sessions"))
 
 @app.route("/portal/export")
 @login_required
 def portal_export():
-    sessions = sb("GET", "sessions", params="?select=*,participants(code,app_type)&order=created_at.desc") or []
+    sessions = sb("GET","sessions",params="?select=*,participants(code,app_type)&order=created_at.desc") or []
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["session_id", "participant_code", "app_type", "session_date", "notes", "data"])
-    for s in (sessions if isinstance(sessions, list) else []):
+    writer.writerow(["session_id","participant_code","app_type","session_date","notes","data"])
+    for s in (sessions if isinstance(sessions,list) else []):
         p = s.get("participants") or {}
-        writer.writerow([
-            s.get("id",""),
-            p.get("code",""),
-            p.get("app_type",""),
-            s.get("session_date",""),
-            s.get("notes",""),
-            json.dumps(s.get("data",{}), ensure_ascii=False),
-        ])
+        writer.writerow([s.get("id",""),p.get("code",""),p.get("app_type",""),
+                         s.get("session_date",""),s.get("notes",""),json.dumps(s.get("data",{}),ensure_ascii=False)])
     output.seek(0)
-    from flask import Response
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": f"attachment;filename=tsl_sessions_{datetime.now().strftime('%Y%m%d')}.csv"}
-    )
+    return Response(output.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition":f"attachment;filename=tsl_sessions_{datetime.now().strftime('%Y%m%d')}.csv"})
 
-# ─── App API endpoint (for mobile apps) ──────────────────────
 @app.route("/api/sessions", methods=["POST"])
 def api_receive_session():
-    api_key = request.headers.get("X-API-Key", "")
-    if api_key != os.getenv("APP_API_KEY", "tsl-app-key-2025"):
-        return jsonify({"error": "Unauthorized"}), 401
+    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
+        return jsonify({"error":"Unauthorized"}), 401
     payload = request.get_json(silent=True) or {}
-    result = sb("POST", "sessions", data={
-        "participant_id": payload.get("participant_id"),
-        "data":           payload.get("data", {}),
-        "notes":          payload.get("notes", ""),
-    })
-    return jsonify({"ok": True, "result": result}), 201
+    result = sb("POST","sessions",data={"participant_id":payload.get("participant_id"),
+                                        "data":payload.get("data",{}),"notes":payload.get("notes","")})
+    return jsonify({"ok":True,"result":result}), 201
 
 if __name__ == "__main__":
     app.run(debug=False)

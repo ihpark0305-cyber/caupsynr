@@ -28,6 +28,7 @@
       <a href="{{ url_for('team') }}"         {% if request.endpoint=='team' %}class="active"{% endif %}>Team</a>
       <a href="{{ url_for('publications') }}" {% if request.endpoint=='publications' %}class="active"{% endif %}>Publications</a>
       <a href="{{ url_for('apps') }}"         {% if request.endpoint=='apps' %}class="active"{% endif %}>Apps</a>
+      <a href="{{ url_for('gallery') }}"      {% if request.endpoint=='gallery' %}class="active"{% endif %}>Gallery</a>
       <a href="{{ url_for('contact') }}"      {% if request.endpoint=='contact' %}class="active"{% endif %}>Contact</a>
       <a href="{{ url_for('login') }}"        class="nav-cta {% if request.endpoint=='login' %}active{% endif %}">🔒 Researcher Portal</a>
     </nav>
@@ -52,6 +53,7 @@
         <a href="{{ url_for('team') }}">Team</a>
         <a href="{{ url_for('publications') }}">Publications</a>
         <a href="{{ url_for('apps') }}">Apps</a>
+        <a href="{{ url_for('gallery') }}">Gallery</a>
         <a href="{{ url_for('contact') }}">Contact</a>
       </div>
       <div class="footer-col">
