@@ -11,19 +11,78 @@
   </div>
 </div>
 
+<!-- Research Interest Cards -->
 <section>
   <div class="container">
 
-    <!-- Tab buttons -->
-    <div class="research-tabs" id="research-tabs">
-      <button class="tab-btn active" data-tab="brainwave">Brain Wave</button>
-      <button class="tab-btn" data-tab="simulation">Simulation Education</button>
-      <button class="tab-btn" data-tab="binaural">Binaural Beat</button>
-      <button class="tab-btn" data-tab="app">Developing Applications</button>
+    <div class="ri-grid">
+
+      <!-- Brain Wave -->
+      <div class="ri-card" onclick="activate('brainwave')" style="cursor:pointer;">
+        <div class="ri-card-top" style="background:linear-gradient(135deg,#004d40 0%,#26a69a 100%);">
+          <img src="{{ url_for('static', filename='images/brain_wave.avif') }}"
+               alt="Brain Wave" class="ri-card-img">
+        </div>
+        <div class="ri-card-body">
+          <span class="label">Research Interest</span>
+          <h3>Brain Wave</h3>
+          <p class="ri-card-desc">Focused on Alpha waves to stabilise the mind, relieve stress, and improve learning efficiency.</p>
+          <span class="ri-read-more">Read More →</span>
+        </div>
+      </div>
+
+      <!-- Simulation Education -->
+      <div class="ri-card" onclick="activate('simulation')" style="cursor:pointer;">
+        <div class="ri-card-top" style="background:linear-gradient(135deg,#1a237e 0%,#5c6bc0 100%);">
+          <img src="{{ url_for('static', filename='images/simulation.avif') }}"
+               alt="Simulation Education" class="ri-card-img">
+        </div>
+        <div class="ri-card-body">
+          <span class="label">Research Interest</span>
+          <h3>Simulation Education</h3>
+          <p class="ri-card-desc">Developing simulations using standardised patients and interactive PFA serious games.</p>
+          <span class="ri-read-more">Read More →</span>
+        </div>
+      </div>
+
+      <!-- Binaural Beat -->
+      <div class="ri-card" onclick="activate('binaural')" style="cursor:pointer;">
+        <div class="ri-card-top" style="background:linear-gradient(135deg,#4a148c 0%,#ab47bc 100%);">
+          <img src="{{ url_for('static', filename='images/binaural.avif') }}"
+               alt="Binaural Beat" class="ri-card-img">
+        </div>
+        <div class="ri-card-body">
+          <span class="label">Research Interest</span>
+          <h3>Binaural Beat</h3>
+          <p class="ri-card-desc">Developing binaural beats and modulating brainwaves to promote mental wellbeing.</p>
+          <span class="ri-read-more">Read More →</span>
+        </div>
+      </div>
+
+      <!-- Developing Applications -->
+      <div class="ri-card" onclick="activate('app')" style="cursor:pointer;">
+        <div class="ri-card-top" style="background:linear-gradient(135deg,#0F6B6B 0%,#1ec0c0 100%);">
+          <img src="{{ url_for('static', filename='images/app.avif') }}"
+               alt="Developing Applications" class="ri-card-img">
+        </div>
+        <div class="ri-card-body">
+          <span class="label">Research Interest</span>
+          <h3>Developing Applications</h3>
+          <p class="ri-card-desc">Building evidence-based mobile apps for disaster survivors and healthcare workers.</p>
+          <span class="ri-read-more">Read More →</span>
+        </div>
+      </div>
+
     </div>
+  </div>
+</section>
+
+<!-- Detail Sections -->
+<section style="background:var(--surface2);padding-top:0;" id="research-detail-area">
+  <div class="container">
 
     <!-- ── Brain Wave ── -->
-    <div class="research-detail active" id="tab-brainwave">
+    <div class="research-detail" id="tab-brainwave">
       <div>
         <img src="{{ url_for('static', filename='images/brain_wave.avif') }}" alt="Brain Wave">
       </div>
@@ -88,7 +147,7 @@
         <h2>Simulation Education</h2>
         <p>We develop simulation-based education programs using standardised patients and interactive serious games to train healthcare workers in Psychological First Aid (PFA).</p>
         <p>Our online-based disaster PFA serious games are designed to teach psychological first aid skills across various disaster scenarios through indirect experiential learning.</p>
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-top:20px;">
           <h4 style="margin-bottom:12px;">Simulation Scenarios</h4>
           <div style="display:flex;flex-direction:column;gap:8px;">
             <div style="display:flex;align-items:center;gap:10px;font-size:.88rem;"><span style="color:var(--accent);font-weight:700;">●</span> Earthquake disaster PFA training</div>
@@ -154,23 +213,19 @@
 
 {% block scripts %}
 <script>
-const tabs  = document.querySelectorAll('.tab-btn');
 const panes = document.querySelectorAll('.research-detail');
 
-// activate from URL param
+// activate from URL param on load
 const param = new URLSearchParams(location.search).get('topic');
 if (param) activate(param);
 
-tabs.forEach(btn => {
-  btn.addEventListener('click', () => {
-    activate(btn.dataset.tab);
-    history.replaceState({}, '', '?topic=' + btn.dataset.tab);
-  });
-});
-
 function activate(key) {
-  tabs.forEach(b  => b.classList.toggle('active', b.dataset.tab === key));
   panes.forEach(p => p.classList.toggle('active', p.id === 'tab-' + key));
+  history.replaceState({}, '', '?topic=' + key);
+  const area = document.getElementById('research-detail-area');
+  if (area) {
+    setTimeout(() => area.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }
 }
 </script>
 {% endblock %}

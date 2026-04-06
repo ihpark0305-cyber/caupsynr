@@ -3,81 +3,93 @@
 
 {% block content %}
 
-<!-- Back + Delete bar -->
-<div class="event-topbar">
-  <div class="container" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-    <a href="{{ url_for('gallery') }}" class="event-back">← Back to Activities</a>
-    <form action="{{ url_for('gallery_delete_event', key=event.key) }}" method="post"
-          onsubmit="return confirm('Delete this event and all its data?')">
-      <button type="submit" class="event-delete-btn">Delete Event</button>
-    </form>
+<!-- Event Hero -->
+<div class="event-hero">
+  <div class="container event-hero-inner">
+
+    <!-- Top row: back + delete -->
+    <div class="event-topbar-row">
+      <a href="{{ url_for('gallery') }}" class="event-back-link">← Back to Activities</a>
+      {% if session.get('researcher') %}
+      <form action="{{ url_for('gallery_delete_event', key=event.key) }}" method="post"
+            onsubmit="return confirm('Delete this entire event and all its photos?')">
+        <button type="submit" class="event-delete-btn">🗑 Delete Event</button>
+      </form>
+      {% endif %}
+    </div>
+
+    <!-- Event info -->
+    <h1>{{ event.title }}</h1>
+    {% if event.date or event.venue %}
+    <div class="event-hero-meta">
+      {% if event.date %}<span>📅 {{ event.date }}</span>{% endif %}
+      {% if event.venue %}<span>📍 {{ event.venue }}</span>{% endif %}
+    </div>
+    {% endif %}
+    {% if event.description %}
+    <p class="event-hero-desc">{{ event.description }}</p>
+    {% endif %}
+
   </div>
 </div>
 
-<!-- Event Header -->
-<section class="event-header-section">
-  <div class="container-sm">
-    <h1 class="event-title">{{ event.title }}</h1>
-    {% if event.date or event.venue %}
-    <p class="event-meta">
-      {% if event.date %}{{ event.date }}{% endif %}
-      {% if event.date and event.venue %} · {% endif %}
-      {% if event.venue %}{{ event.venue }}{% endif %}
-    </p>
-    {% endif %}
-    {% if event.description %}
-    <p class="event-desc">{{ event.description }}</p>
-    {% endif %}
-  </div>
-</section>
-
 <!-- Photos Section -->
-<section style="padding-top:0;">
+<section style="padding:48px 0 80px;">
   <div class="container">
 
-    <!-- Upload -->
-    <div class="event-upload-bar">
+    <!-- Upload (researcher only) -->
+    {% if session.get('researcher') %}
+    <div style="margin-bottom:36px;">
       <form action="{{ url_for('gallery_event_upload', key=event.key) }}"
             method="post" enctype="multipart/form-data" id="ev-upload-form">
-        <div class="upload-zone" id="ev-upload-zone" style="padding:28px 24px;">
-          <div class="upload-icon" style="font-size:2rem;">📷</div>
-          <p class="upload-title" style="font-size:.95rem;">Add Photos</p>
-          <p class="upload-sub">Drag &amp; drop or
-            <label for="ev-photo-input" class="upload-link">browse</label>
+        <div class="ev-upload-area" id="ev-upload-zone">
+          <div class="ev-upload-icon">📷</div>
+          <p class="ev-upload-title">Add Photos</p>
+          <p class="ev-upload-sub">Drag &amp; drop or
+            <label for="ev-photo-input" class="ev-upload-link">browse</label>
           </p>
-          <input type="file" id="ev-photo-input" name="photo" accept="image/*" multiple hidden>
+          <input type="file" id="ev-photo-input" name="photo"
+                 accept="image/*" multiple hidden>
         </div>
-        <div id="ev-preview" class="upload-preview"></div>
-        <div id="ev-actions" style="display:none;margin-top:12px;gap:10px;align-items:center;">
+        <div id="ev-preview" class="ev-preview"></div>
+        <div id="ev-actions" style="display:none;gap:10px;align-items:center;">
           <button type="submit" class="btn btn-primary">Upload</button>
           <button type="button" class="btn btn-outline" id="ev-clear">Clear</button>
         </div>
       </form>
     </div>
+    {% endif %}
 
     <!-- Photo Grid -->
     {% if photos %}
-    <div class="gallery-grid">
+    <div class="ev-photo-grid">
       {% for photo in photos %}
-      <div class="gallery-item"
+      <div class="ev-photo-item"
            onclick="openLightbox('{{ url_for('static', filename='images/gallery/' + event.key + '/' + photo) }}')">
         <img src="{{ url_for('static', filename='images/gallery/' + event.key + '/' + photo) }}"
              alt="{{ photo }}" loading="lazy">
-        <div class="gallery-item-overlay">
+        {% if session.get('researcher') %}
+        <div class="ev-del-overlay">
           <form action="{{ url_for('gallery_event_delete', key=event.key, filename=photo) }}"
                 method="post"
                 onsubmit="event.stopPropagation();return confirm('Delete this photo?');">
-            <button type="submit" class="gallery-delete-btn">✕</button>
+            <button type="submit" class="ev-del-btn" title="Delete">✕</button>
           </form>
         </div>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
+
     {% else %}
-    <div class="gallery-empty">
-      <div style="font-size:3rem;margin-bottom:14px;">🖼️</div>
-      <p style="font-size:1rem;font-weight:500;color:var(--dark);margin-bottom:4px;">No photos yet</p>
-      <p>Use the upload area above to add photos to this event.</p>
+    <div style="text-align:center;padding:72px 0;">
+      <div style="font-size:3rem;margin-bottom:16px;">🖼️</div>
+      <p style="font-size:1rem;font-weight:600;color:var(--dark);margin-bottom:6px;">No photos yet</p>
+      {% if session.get('researcher') %}
+      <p style="color:var(--muted);">Use the upload area above to add photos.</p>
+      {% else %}
+      <p style="color:var(--muted);">Photos will appear here once added.</p>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -87,13 +99,14 @@
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox" onclick="closeLightbox()">
   <button class="lightbox-close" onclick="closeLightbox()">✕</button>
-  <img id="lightbox-img" src="" alt="">
+  <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
 </div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
+{% if session.get('researcher') %}
 const zone  = document.getElementById('ev-upload-zone');
 const input = document.getElementById('ev-photo-input');
 const prev  = document.getElementById('ev-preview');
@@ -111,23 +124,26 @@ zone.addEventListener('drop', e => {
 input.addEventListener('change', showPrev);
 document.getElementById('ev-clear').addEventListener('click', () => {
   input.value = ''; prev.innerHTML = '';
-  acts.style.display = 'none'; zone.style.display = 'flex';
+  acts.style.display = 'none'; zone.style.display = 'block';
 });
 function showPrev() {
   prev.innerHTML = '';
   if (!input.files.length) { acts.style.display = 'none'; return; }
-  zone.style.display = 'none'; acts.style.display = 'flex';
+  zone.style.display = 'none';
+  acts.style.display = 'flex';
   Array.from(input.files).forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      const w = document.createElement('div'); w.className = 'preview-thumb';
-      const i = document.createElement('img'); i.src = e.target.result;
-      const s = document.createElement('span'); s.textContent = file.name;
-      w.appendChild(i); w.appendChild(s); prev.appendChild(w);
+      const w = document.createElement('div');
+      w.className = 'ev-preview-thumb';
+      const i = document.createElement('img');
+      i.src = e.target.result;
+      w.appendChild(i); prev.appendChild(w);
     };
     reader.readAsDataURL(file);
   });
 }
+{% endif %}
 
 function openLightbox(src) {
   document.getElementById('lightbox-img').src = src;
