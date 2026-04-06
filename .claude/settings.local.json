@@ -14,7 +14,21 @@
       "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_영문버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_en_content.avif\")",
       "Bash(ls -la \"C:\\\\Users\\\\hpark\\\\OneDrive\\\\문서\\\\TSL\\\\web\\\\static\"\" && ls -la \"C:UsershparkOneDrive문서TSLwebtemplates\"\")",
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(git:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"C:/Users/hpark/OneDrive/문서/TSL/web\" && git status --porcelain | grep -q . && git add -A && git commit -m \"수정 내용\" && git push origin main || true",
+            "statusMessage": "GitHub에 자동 push 중..."
+          }
+        ]
+      }
     ]
   }
 }
