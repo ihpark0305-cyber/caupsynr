@@ -8,6 +8,9 @@
     <span class="label">Peer-reviewed research</span>
     <h1>Publications</h1>
     <p>A selection of articles, books, and copyrighted educational materials produced by the Trauma Stress Lab.</p>
+    {% if session.get('researcher') %}
+    <button class="ri-card-new" style="margin-top:16px;" onclick="document.getElementById('pub-modal').style.display='flex'">+ New Publication</button>
+    {% endif %}
   </div>
 </div>
 
@@ -64,6 +67,26 @@
 </section>
 
 {% endblock %}
+
+{% if session.get('researcher') %}
+<!-- New Publication Modal -->
+<div id="pub-modal" class="modal-backdrop" style="display:none;" onclick="if(event.target===this)this.style.display='none'">
+  <div class="modal-card" style="max-width:520px;">
+    <div class="modal-header">
+      <h3>New Publication</h3>
+      <button class="modal-close" onclick="document.getElementById('pub-modal').style.display='none'">✕</button>
+    </div>
+    <form method="POST" action="/publications/new" style="display:flex;flex-direction:column;gap:12px;padding:24px;">
+      <input name="title" placeholder="Title *" required style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.95rem;">
+      <input name="authors" placeholder="Authors (e.g. Choi, Y. J. & Lee, N. R.)" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.95rem;">
+      <input name="journal" placeholder="Journal, Volume(Issue)" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.95rem;">
+      <input name="year" type="number" placeholder="Year" min="1990" max="2100" value="{{ current_year }}" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.95rem;">
+      <input name="doi" placeholder="DOI URL (optional)" style="padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:.95rem;">
+      <button type="submit" style="padding:12px;border-radius:10px;background:var(--accent);color:#fff;font-weight:600;border:none;cursor:pointer;font-size:1rem;">Add Publication</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {% block scripts %}
 <script>

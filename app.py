@@ -17,6 +17,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 GALLERY_FOLDER    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images', 'gallery')
 GALLERY_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gallery_data.json')
 APPS_EXTRA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'apps_extra.json')
+PUBS_EXTRA_FILE   = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pubs_extra.json')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'avif', 'webp'}
 
 def allowed_file(f): return '.' in f and f.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
@@ -41,6 +42,13 @@ def load_extra_apps():
 
 def save_extra_apps(data):
     with open(APPS_EXTRA_FILE,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,indent=2)
+
+def load_extra_pubs():
+    if not os.path.exists(PUBS_EXTRA_FILE): return []
+    with open(PUBS_EXTRA_FILE,'r',encoding='utf-8') as f: return json.load(f)
+
+def save_extra_pubs(data):
+    with open(PUBS_EXTRA_FILE,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,indent=2)
 
 def sb(method, path, data=None, params=""):
     if not SUPABASE_URL or not SUPABASE_KEY: return []
@@ -78,10 +86,10 @@ PROFESSOR = {
 }
 
 RESEARCH_TOPICS = [
-    {"key": "brainwave",   "title": "Brain Wave",              "summary": "Focused on Alpha waves to stabilise the mind, relieve stress, and improve learning efficiency.",         "image": "images/brain_wave.avif"},
-    {"key": "simulation",  "title": "Simulation Education",    "summary": "Developing simulations using standardised patients and interactive PFA serious games.",                   "image": "images/simulation.avif"},
-    {"key": "binaural",    "title": "Binaural Beat",           "summary": "Developing binaural beats and modulating brainwaves to promote mental wellbeing.",                       "image": "images/binaural.avif"},
-    {"key": "app",         "title": "Developing Applications", "summary": "Building evidence-based mobile apps for disaster survivors and healthcare workers.",                     "image": "images/app.avif"},
+    {"key": "brainwave",   "title": "Brain Wave",              "summary": "Focused on Alpha waves to stabilise the mind, relieve stress, and improve learning efficiency.",         "image": "images/brain_wave.avif",  "gradient": "linear-gradient(135deg,#004d40 0%,#26a69a 100%)"},
+    {"key": "simulation",  "title": "Simulation Education",    "summary": "Developing simulations using standardised patients and interactive PFA serious games.",                   "image": "images/simulation.avif",  "gradient": "linear-gradient(135deg,#1a237e 0%,#5c6bc0 100%)"},
+    {"key": "binaural",    "title": "Binaural Beat",           "summary": "Developing binaural beats and modulating brainwaves to promote mental wellbeing.",                       "image": "images/binaural.avif",    "gradient": "linear-gradient(135deg,#4a148c 0%,#ab47bc 100%)"},
+    {"key": "app",         "title": "Developing Applications", "summary": "Building evidence-based mobile apps for disaster survivors and healthcare workers.",                     "image": "images/app.avif",         "gradient": "linear-gradient(135deg,#0F6B6B 0%,#1ec0c0 100%)"},
 ]
 
 TEAM = {
@@ -297,7 +305,8 @@ COPYRIGHTS = [
 
 def _articles_by_year():
     result = OrderedDict()
-    for pub in sorted(ARTICLES, key=lambda x: -x["year"]):
+    all_pubs = ARTICLES + load_extra_pubs()
+    for pub in sorted(all_pubs, key=lambda x: -x["year"]):
         result.setdefault(pub["year"], []).append(pub)
     return result
 
@@ -319,7 +328,30 @@ def team():
 def publications():
     by_year = _articles_by_year()
     return render_template("publications.html", publications_by_year=by_year,
-                           pub_years=list(by_year.keys()), copyrights=COPYRIGHTS)
+                           pub_years=list(by_year.keys()), copyrights=COPYRIGHTS,
+                           current_year=datetime.now().year)
+
+@app.route("/publications/new", methods=["POST"])
+@login_required
+def publications_new():
+    title = request.form.get('title','').strip()
+    if not title: return redirect(url_for('publications'))
+    try:
+        year = int(request.form.get('year', datetime.now().year))
+    except ValueError:
+        year = datetime.now().year
+    doi_raw = request.form.get('doi','').strip()
+    entry = {
+        'year': year,
+        'title': title,
+        'authors': request.form.get('authors','').strip(),
+        'journal': request.form.get('journal','').strip(),
+        'doi': doi_raw if doi_raw else None,
+    }
+    extra = load_extra_pubs()
+    extra.append(entry)
+    save_extra_pubs(extra)
+    return redirect(url_for('publications'))
 
 @app.route("/apps")
 def apps():

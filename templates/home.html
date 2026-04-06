@@ -59,18 +59,22 @@
 <section>
   <div class="container">
     <div class="section-header">
-      <span class="label">What we study</span>
-      <h2>Research Areas</h2>
-      <p>From brainwave analysis to disaster simulation — our research spans the full spectrum of mental health intervention.</p>
+      <span class="label">Our Focus</span>
+      <h2>Research Interest</h2>
+      <p>Click on a research area to explore in detail below.</p>
     </div>
-    <div class="research-grid">
+    <div class="ri-grid">
       {% for r in research_topics %}
-      <a href="{{ url_for('research') }}?topic={{ r.key }}" class="research-card">
-        <img src="{{ url_for('static', filename=r.image) }}" alt="{{ r.title }}">
-        <div class="research-card-overlay">
+      <a href="{{ url_for('research') }}?topic={{ r.key }}" class="ri-card">
+        <div class="ri-card-top" style="background:{{ r.gradient }};">
+          <img src="{{ url_for('static', filename=r.image) }}"
+               alt="{{ r.title }}" class="ri-card-img">
+        </div>
+        <div class="ri-card-body">
           <span class="label">Research Interest</span>
           <h3>{{ r.title }}</h3>
-          <p>{{ r.summary }}</p>
+          <p class="ri-card-desc">{{ r.summary }}</p>
+          <span class="ri-read-more">Read More →</span>
         </div>
       </a>
       {% endfor %}
