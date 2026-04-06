@@ -1,0 +1,29 @@
+[
+  {
+    "key": "inc2023",
+    "title": "INC_(2023)",
+    "date": "November 2–3, 2023",
+    "venue": "The K Hotel Seoul, Korea",
+    "description": "The TSL had a poster presentation at INC.",
+    "cover": "INC(2023).avif",
+    "created_at": "2023-11-03"
+  },
+  {
+    "key": "kripalu2023",
+    "title": "Kripalu Center (2023)",
+    "date": "2023",
+    "venue": "Kripalu Center, USA",
+    "description": "We participated in the “TRAUMA, MEMORY, AND THE RESTORATION OF ONE’S SELF” program. The program was conducted by the psychiatrist and cofounder of the Trauma Research Foundation (TRF) Bessel van der Kolk and somatic educator and TRF cofounder Licia Sky.",
+    "cover": "Kripalu_Center2023.webp",
+    "created_at": "2023-01-01"
+  },
+  {
+    "key": "inc2021",
+    "title": "INC 2021",
+    "date": "2021",
+    "venue": "",
+    "description": "At INC 2021, the Trauma Stress Lab’s presentation ‘Efficacy of a Community-Based Trauma Recovery Program after a Fire Disaster — A Good Practice Model for Community Mental Health Nursing’ received the Best Presentation Award.",
+    "cover": "award.avif",
+    "created_at": "2021-01-01"
+  }
+]

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Trauma Stress Lab · CAU{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Nunito+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<header class="site-header">
+  <div class="container nav-inner">
+    <a class="brand" href="{{ url_for('home') }}">
+      <img src="{{ url_for('static', filename='images/cau.jpg') }}" alt="CAU">
+      <span class="brand-text">
+        <strong>Trauma Stress Lab</strong>
+        <small>Chung-Ang University</small>
+      </span>
+    </a>
+    <nav class="site-nav" id="site-nav">
+      <a href="{{ url_for('home') }}"         {% if request.endpoint=='home' %}class="active"{% endif %}>Home</a>
+      <a href="{{ url_for('research') }}"     {% if request.endpoint=='research' %}class="active"{% endif %}>Research</a>
+      <a href="{{ url_for('team') }}"         {% if request.endpoint=='team' %}class="active"{% endif %}>Team</a>
+      <a href="{{ url_for('publications') }}" {% if request.endpoint=='publications' %}class="active"{% endif %}>Publications</a>
+      <a href="{{ url_for('apps') }}"         {% if request.endpoint=='apps' %}class="active"{% endif %}>Apps</a>
+      <a href="{{ url_for('contact') }}"      {% if request.endpoint=='contact' %}class="active"{% endif %}>Contact</a>
+      <a href="{{ url_for('login') }}"        class="nav-cta {% if request.endpoint=='login' %}active{% endif %}">🔒 Researcher Portal</a>
+    </nav>
+    <button class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
+  </div>
+</header>
+
+{% block content %}{% endblock %}
+
+<!-- ── FOOTER ── -->
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>Trauma Stress Lab</strong>
+        <p>Red Cross College of Nursing<br>Chung-Ang University, Seoul, South Korea</p>
+        <p style="margin-top:10px">중앙대학교 정신건강간호 연구실</p>
+      </div>
+      <div class="footer-col">
+        <h4>Pages</h4>
+        <a href="{{ url_for('research') }}">Research</a>
+        <a href="{{ url_for('team') }}">Team</a>
+        <a href="{{ url_for('publications') }}">Publications</a>
+        <a href="{{ url_for('apps') }}">Apps</a>
+        <a href="{{ url_for('contact') }}">Contact</a>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <a href="mailto:caupsynr@gmail.com">caupsynr@gmail.com</a>
+        <a href="mailto:yunjungchoi@cau.ac.kr">yunjungchoi@cau.ac.kr</a>
+        <a href="tel:+82-2-820-5986">+82-2-820-5986</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2025 Trauma Stress Lab, Chung-Ang University. All rights reserved.</span>
+      <span>Operating since 2015</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+  const btn = document.getElementById('menu-btn');
+  const nav = document.getElementById('site-nav');
+  btn.addEventListener('click', () => {
+    nav.classList.toggle('open');
+    btn.textContent = nav.classList.contains('open') ? '✕' : '☰';
+  });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

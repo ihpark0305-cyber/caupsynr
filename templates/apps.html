@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Apps · Trauma Stress Lab{% endblock %}
+
+{% block content %}
+
+<div class="page-hero">
+  <div class="container">
+    <span class="label">Digital Mental Health Tools</span>
+    <h1>Our Apps</h1>
+    <p>Evidence-based mobile applications developed by the Trauma Stress Lab to support mental health recovery for disaster survivors and healthcare workers.</p>
+  </div>
+</div>
+
+<section>
+  <div class="container">
+    <div class="grid-3">
+      {% for app in apps %}
+      <div class="app-card">
+        <div class="app-card-top">
+          <img class="app-screenshot" src="{{ url_for('static', filename=app.screenshot) }}" alt="{{ app.name }}">
+        </div>
+        <div class="app-card-body">
+          <div class="app-name">{{ app.name }}</div>
+          <div class="app-full-name">{{ app.full_name }}</div>
+          <p class="app-desc">{{ app.description }}</p>
+          <div class="app-badges">
+            {% for tag in app.tags %}<span class="app-badge">{{ tag }}</span>{% endfor %}
+          </div>
+          <div class="app-download-row">
+            {% if app.android_url %}
+            <a href="{{ app.android_url }}" class="store-btn" target="_blank">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3.18 23.76a1.52 1.52 0 0 0 1.56-.06l11.2-6.44L13 14.28zM20.4 10.16l-3.18-1.84-4 3.6 4 3.6 3.2-1.84A2 2 0 0 0 20.4 10.16zM1.62.44A2 2 0 0 0 1 2v20a2 2 0 0 0 .62 1.56L1.76 23.7 13.36 12.1 1.76.5z"/></svg>
+              Google Play
+            </a>
+            {% endif %}
+            {% if app.ios_url %}
+            <a href="{{ app.ios_url }}" class="store-btn" target="_blank">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              App Store
+            </a>
+            {% endif %}
+            {% if not app.android_url and not app.ios_url %}
+            <span class="coming-soon">Coming Soon</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- ── About apps section ── -->
+<section style="background:var(--surface2);">
+  <div class="container-sm" style="text-align:center;">
+    <span class="label" style="display:block;margin-bottom:12px;">Research-based</span>
+    <h2 style="margin-bottom:16px;">Apps built on clinical evidence</h2>
+    <p style="color:var(--muted);margin-bottom:28px;font-size:1.02rem;">Each application developed by our lab has undergone rigorous randomised controlled trials and pilot studies. Our interventions are grounded in years of research on disaster trauma, neurofeedback, and psychological recovery.</p>
+    <a href="{{ url_for('publications') }}" class="btn btn-outline">See Related Publications</a>
+  </div>
+</section>
+
+<!-- ── Coming soon ── -->
+<section>
+  <div class="container-sm" style="text-align:center;">
+    <span class="label" style="display:block;margin-bottom:12px;">In Development</span>
+    <h2 style="margin-bottom:14px;">More tools coming soon</h2>
+    <p style="color:var(--muted);margin-bottom:28px;">We are continuously developing new digital health interventions. If you're interested in participating in our research or collaborating, reach out to us.</p>
+    <a href="{{ url_for('contact') }}" class="btn btn-primary">Contact the Lab</a>
+  </div>
+</section>
+
+{% endblock %}

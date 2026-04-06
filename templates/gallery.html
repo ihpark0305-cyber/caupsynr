@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Gallery · Trauma Stress Lab{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<div class="activities-hero">
+  <div class="container" style="text-align:center;">
+    <h1 class="activities-title">ACTIVITIES</h1>
+    <div class="activities-underline"></div>
+  </div>
+</div>
+
+<!-- New Event Modal Trigger -->
+<div class="activities-toolbar">
+  <div class="container" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+    <span class="activities-count">{{ events|length }} Event{% if events|length != 1 %}s{% endif %}</span>
+    <button class="btn btn-primary" onclick="document.getElementById('new-event-modal').classList.add('open')">
+      + New Event
+    </button>
+  </div>
+</div>
+
+<!-- Events Grid -->
+<section class="activities-section">
+  <div class="container">
+    {% if events %}
+    <div class="activities-grid">
+      {% for ev in events %}
+      <a href="{{ url_for('gallery_event', key=ev.key) }}" class="activity-card">
+        <div class="activity-card-img">
+          {% if ev.cover_photo %}
+          <img src="{{ url_for('static', filename='images/gallery/' + ev.key + '/' + ev.cover_photo) }}"
+               alt="{{ ev.title }}" loading="lazy">
+          {% else %}
+          <div class="activity-card-placeholder">📷</div>
+          {% endif %}
+        </div>
+        <div class="activity-card-overlay">
+          <div class="activity-card-info">
+            <h3>{{ ev.title }}</h3>
+            {% if ev.date %}<p class="activity-card-date">{{ ev.date }}</p>{% endif %}
+          </div>
+        </div>
+        {% if ev.photo_count %}
+        <span class="activity-card-count">{{ ev.photo_count }} photo{% if ev.photo_count != 1 %}s{% endif %}</span>
+        {% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="gallery-empty" style="text-align:center;padding:80px 0;">
+      <div style="font-size:3rem;margin-bottom:16px;">🖼️</div>
+      <p style="font-size:1.05rem;font-weight:500;color:var(--dark);margin-bottom:6px;">No events yet</p>
+      <p style="color:var(--muted);">Click <strong>+ New Event</strong> to create your first gallery.</p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- New Event Modal -->
+<div class="modal-backdrop" id="new-event-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>New Event</h3>
+      <button class="modal-close" onclick="document.getElementById('new-event-modal').classList.remove('open')">✕</button>
+    </div>
+    <form action="{{ url_for('gallery_new') }}" method="post">
+      <div class="form-group">
+        <label>Event Title *</label>
+        <input type="text" name="title" placeholder="e.g. INC_(2023)" required>
+      </div>
+      <div class="form-group">
+        <label>Date</label>
+        <input type="text" name="date" placeholder="e.g. November 2–3, 2023">
+      </div>
+      <div class="form-group">
+        <label>Venue</label>
+        <input type="text" name="venue" placeholder="e.g. The K Hotel Seoul, Korea">
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" rows="3" placeholder="Brief description of the event…"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn btn-outline"
+                onclick="document.getElementById('new-event-modal').classList.remove('open')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Create Event</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape')
+    document.getElementById('new-event-modal').classList.remove('open');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python app.py)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/Autonomic Nerve Therapy.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/mt_autonomic.avif\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/brain game.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/mt_brain_game.avif\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/brain therapy.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/mt_brain_therapy.avif\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/PLS_영문버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/pls_en_content.avif\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_한글버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_kr_content.avif\")",
+      "Bash(\"C:/Users/hpark/OneDrive/문서/TLS/tsl/apps_extra.json\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/PLS_한글버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/pls_kr_content.avif\")",
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_영문버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_en_content.avif\")"
+    ]
+  }
+}
