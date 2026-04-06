@@ -4,66 +4,78 @@
 {% block content %}
 
 <!-- Hero -->
-<div class="activities-hero">
-  <div class="container" style="text-align:center;">
-    <h1 class="activities-title">ACTIVITIES</h1>
-    <div class="activities-underline"></div>
+<div class="gallery-hero">
+  <div class="container">
+    <span class="label">Lab Activities & Events</span>
+    <h1>Activities</h1>
   </div>
 </div>
 
-<!-- New Event Modal Trigger -->
-<div class="activities-toolbar">
-  <div class="container" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-    <span class="activities-count">{{ events|length }} Event{% if events|length != 1 %}s{% endif %}</span>
-    <button class="btn btn-primary" onclick="document.getElementById('new-event-modal').classList.add('open')">
+<!-- Toolbar -->
+<div class="gallery-toolbar">
+  <div class="container" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <span class="gallery-count-label">
+      {{ events|length }} Event{% if events|length != 1 %}s{% endif %}
+    </span>
+    {% if session.get('researcher') %}
+    <button class="btn btn-primary" style="font-size:.82rem;padding:8px 18px;"
+            onclick="document.getElementById('new-event-modal').classList.add('open')">
       + New Event
     </button>
+    {% endif %}
   </div>
 </div>
 
 <!-- Events Grid -->
-<section class="activities-section">
+<section style="padding:48px 0 80px;">
   <div class="container">
     {% if events %}
-    <div class="activities-grid">
+    <div class="gallery-overlay-grid">
       {% for ev in events %}
-      <a href="{{ url_for('gallery_event', key=ev.key) }}" class="activity-card">
-        <div class="activity-card-img">
-          {% if ev.cover_photo %}
-          <img src="{{ url_for('static', filename='images/gallery/' + ev.key + '/' + ev.cover_photo) }}"
-               alt="{{ ev.title }}" loading="lazy">
-          {% else %}
-          <div class="activity-card-placeholder">📷</div>
+      <a href="{{ url_for('gallery_event', key=ev.key) }}" class="gallery-overlay-card">
+        {% if ev.cover_photo %}
+        <img src="{{ url_for('static', filename='images/gallery/' + ev.key + '/' + ev.cover_photo) }}"
+             alt="{{ ev.title }}" loading="lazy">
+        {% else %}
+        <div class="gallery-overlay-placeholder">📷</div>
+        {% endif %}
+        {% if ev.photo_count %}
+        <span class="gallery-overlay-count">
+          {{ ev.photo_count }} photo{% if ev.photo_count != 1 %}s{% endif %}
+        </span>
+        {% endif %}
+        <div class="gallery-overlay-info">
+          <div class="gallery-overlay-title">{{ ev.title }}</div>
+          {% if ev.date %}
+          <div class="gallery-overlay-date">{{ ev.date }}</div>
           {% endif %}
         </div>
-        <div class="activity-card-overlay">
-          <div class="activity-card-info">
-            <h3>{{ ev.title }}</h3>
-            {% if ev.date %}<p class="activity-card-date">{{ ev.date }}</p>{% endif %}
-          </div>
-        </div>
-        {% if ev.photo_count %}
-        <span class="activity-card-count">{{ ev.photo_count }} photo{% if ev.photo_count != 1 %}s{% endif %}</span>
-        {% endif %}
       </a>
       {% endfor %}
     </div>
     {% else %}
-    <div class="gallery-empty" style="text-align:center;padding:80px 0;">
-      <div style="font-size:3rem;margin-bottom:16px;">🖼️</div>
+    <div class="gallery-empty-state">
+      <div class="empty-icon">🖼️</div>
       <p style="font-size:1.05rem;font-weight:500;color:var(--dark);margin-bottom:6px;">No events yet</p>
-      <p style="color:var(--muted);">Click <strong>+ New Event</strong> to create your first gallery.</p>
+      {% if session.get('researcher') %}
+      <p style="color:var(--muted);">Click <strong>+ New Event</strong> above to create your first gallery.</p>
+      {% else %}
+      <p style="color:var(--muted);">Events will appear here once they are added.</p>
+      {% endif %}
     </div>
     {% endif %}
   </div>
 </section>
 
+{% if session.get('researcher') %}
 <!-- New Event Modal -->
-<div class="modal-backdrop" id="new-event-modal" onclick="if(event.target===this)this.classList.remove('open')">
+<div class="modal-backdrop" id="new-event-modal"
+     onclick="if(event.target===this)this.classList.remove('open')">
   <div class="modal-card">
     <div class="modal-header">
       <h3>New Event</h3>
-      <button class="modal-close" onclick="document.getElementById('new-event-modal').classList.remove('open')">✕</button>
+      <button class="modal-close"
+              onclick="document.getElementById('new-event-modal').classList.remove('open')">✕</button>
     </div>
     <form action="{{ url_for('gallery_new') }}" method="post">
       <div class="form-group">
@@ -90,6 +102,7 @@
     </form>
   </div>
 </div>
+{% endif %}
 
 {% endblock %}
 
@@ -97,7 +110,7 @@
 <script>
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape')
-    document.getElementById('new-event-modal').classList.remove('open');
+    document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
 });
 </script>
 {% endblock %}

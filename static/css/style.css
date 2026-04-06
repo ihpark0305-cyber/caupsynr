@@ -720,4 +720,263 @@ section { padding: 80px 0; }
 }
 .fade-up { animation: fadeUp .5s ease both; }
 .fade-up-2 { animation: fadeUp .5s ease .1s both; }
+
+/* ─── MODALS ─── */
+.modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-backdrop.open { display: flex; }
+.modal-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.22);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.modal-header h3 { font-size: 1.2rem; }
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .15s;
+  line-height: 1;
+}
+.modal-close:hover { background: var(--surface2); color: var(--dark); }
+
+/* ─── APPS PAGE (Research Interest card style) ─── */
+.ri-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 24px;
+}
+.ri-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  overflow: hidden;
+  transition: box-shadow .25s, transform .25s;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+}
+.ri-card:hover {
+  box-shadow: 0 12px 40px rgba(0,0,0,.1);
+  transform: translateY(-5px);
+}
+.ri-card-top {
+  aspect-ratio: 4/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 5rem;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ri-card-icon {
+  filter: drop-shadow(0 8px 24px rgba(0,0,0,.25));
+  transition: transform .3s ease;
+  line-height: 1;
+}
+.ri-card:hover .ri-card-icon { transform: scale(1.12) translateY(-4px); }
+.ri-card-body {
+  padding: 22px 24px 26px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.ri-card-body .label { margin-bottom: 8px; display: block; }
+.ri-card-body h3 { font-size: 1.25rem; margin-bottom: 10px; }
+.ri-card-desc {
+  font-size: .88rem;
+  color: var(--muted);
+  line-height: 1.6;
+  flex: 1;
+  margin-bottom: 20px;
+}
+.ri-read-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: .82rem;
+  font-weight: 600;
+  padding: 10px 22px;
+  border-radius: 100px;
+  transition: background .2s;
+  align-self: flex-start;
+  white-space: nowrap;
+}
+.ri-read-more:hover { background: #0a5555; }
+/* New App card (researcher only) */
+.ri-card-new { cursor: pointer; }
+.ri-card-new .ri-card-top {
+  background: var(--surface2) !important;
+  border-bottom: 1px dashed var(--border);
+}
+.ri-card-new:hover .ri-card-top { background: var(--accent-light) !important; }
+.ri-card-new .ri-plus {
+  font-size: 3rem;
+  color: var(--border);
+  font-weight: 300;
+  transition: color .2s;
+}
+.ri-card-new:hover .ri-plus { color: var(--accent); }
+.ri-card-new .ri-read-more {
+  background: transparent;
+  color: var(--muted);
+  border: 1.5px dashed var(--border);
+  padding: 9px 20px;
+}
+.ri-card-new:hover .ri-read-more {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* App detail badge light variant */
+.app-badge-light {
+  background: rgba(255,255,255,.2);
+  color: #fff;
+}
+
+/* ─── GALLERY PAGE (image overlay grid) ─── */
+.gallery-hero {
+  background: var(--dark);
+  padding: 64px 0 52px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.gallery-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 60% 40%, rgba(15,107,107,.38) 0%, transparent 65%);
+  pointer-events: none;
+}
+.gallery-hero h1 { color: #fff; position: relative; margin-bottom: 8px; }
+.gallery-hero .label { color: var(--accent-mid); display: block; margin-bottom: 12px; position: relative; }
+.gallery-toolbar {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky;
+  top: var(--nav-h);
+  z-index: 10;
+}
+.gallery-count-label {
+  font-size: .83rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+/* Overlay-style grid (like screenshot) */
+.gallery-overlay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.gallery-overlay-card {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 4/3;
+  background: var(--dark);
+  text-decoration: none;
+  display: block;
+}
+.gallery-overlay-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .4s ease, opacity .4s ease;
+}
+.gallery-overlay-card:hover img {
+  transform: scale(1.06);
+  opacity: .85;
+}
+.gallery-overlay-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.5rem;
+  background: #2a2a2a;
+}
+.gallery-overlay-info {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0,0,0,.78) 0%, rgba(0,0,0,.1) 55%, transparent 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 18px 20px;
+  pointer-events: none;
+}
+.gallery-overlay-title {
+  font-family: 'Nunito', sans-serif;
+  font-size: .95rem;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gallery-overlay-date {
+  font-size: .73rem;
+  color: rgba(255,255,255,.65);
+  margin-top: 3px;
+}
+.gallery-overlay-count {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,.55);
+  color: rgba(255,255,255,.85);
+  font-size: .68rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 100px;
+  backdrop-filter: blur(4px);
+}
+.gallery-empty-state {
+  text-align: center;
+  padding: 80px 0;
+  color: var(--muted);
+}
+.gallery-empty-state .empty-icon { font-size: 3rem; margin-bottom: 16px; }
+
+@media (max-width: 900px) {
+  .gallery-overlay-grid { grid-template-columns: repeat(2, 1fr); }
+  .ri-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 640px) {
+  .gallery-overlay-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .ri-grid { grid-template-columns: 1fr; }
+}
 .fade-up-3 { animation: fadeUp .5s ease .2s both; }

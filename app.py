@@ -327,6 +327,7 @@ def apps():
     return render_template("apps.html", apps=all_apps)
 
 @app.route("/apps/new", methods=["POST"])
+@login_required
 def apps_new():
     name = request.form.get('name','').strip()
     if not name: return redirect(url_for('apps'))
@@ -376,6 +377,7 @@ def gallery():
     return render_template("gallery.html", events=events)
 
 @app.route("/gallery/new", methods=["POST"])
+@login_required
 def gallery_new():
     title = request.form.get('title','').strip()
     if not title: return redirect(url_for('gallery'))

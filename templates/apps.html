@@ -13,45 +13,46 @@
 
 <section>
   <div class="container">
-    <div class="arc-grid apps-grid">
+
+    <div class="ri-grid">
 
       {% for app in apps %}
-      <a href="{{ url_for('app_detail', key=app.key) }}" class="arc-card">
-        <div class="arc-visual" style="background:{{ app.gradient }};">
-          <span class="arc-icon">{{ app.icon }}</span>
+      <a href="{{ url_for('app_detail', key=app.key) }}" class="ri-card">
+        <div class="ri-card-top" style="background:{{ app.gradient }};">
+          <span class="ri-card-icon">{{ app.icon }}</span>
         </div>
-        <div class="arc-body">
-          {% if app.label %}<span class="label">{{ app.label }}</span>{% endif %}
-          <h3>{{ app.name }}</h3>
-          <p style="font-size:.78rem;font-weight:600;color:var(--accent);margin-bottom:8px;">({{ app.full_name }})</p>
-          {% if app.desc_en %}
-          <p>{{ app.desc_en[:90] }}…</p>
-          {% endif %}
+        <div class="ri-card-body">
+          <span class="label">{{ app.label if app.label else 'Application' }}</span>
+          <h3>{{ app.name }}{% if app.full_name %} <span style="font-size:.75em;font-weight:500;color:var(--muted);">({{ app.full_name }})</span>{% endif %}</h3>
           {% if app.tags %}
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
             {% for tag in app.tags[:2] %}
-            <span class="app-badge" style="font-size:.68rem;">{{ tag }}</span>
+            <span class="app-badge">{{ tag }}</span>
             {% endfor %}
           </div>
           {% endif %}
-        </div>
-        <div class="arc-footer">
-          <span class="arc-more-btn">Learn More →</span>
+          <p class="ri-card-desc">
+            {{ (app.desc_en or '')[:110] }}{% if (app.desc_en or '')|length > 110 %}…{% endif %}
+          </p>
+          <span class="ri-read-more">Learn More →</span>
         </div>
       </a>
       {% endfor %}
 
-      <!-- + New App Card -->
-      <div class="arc-card arc-card-new"
+      {% if session.get('researcher') %}
+      <div class="ri-card ri-card-new"
            onclick="document.getElementById('new-app-modal').classList.add('open')">
-        <div class="arc-visual arc-new-visual">
-          <span class="arc-new-plus">+</span>
+        <div class="ri-card-top">
+          <span class="ri-plus">＋</span>
         </div>
-        <div class="arc-body" style="align-items:center;text-align:center;justify-content:center;">
-          <h3 style="color:var(--muted);">New App</h3>
-          <p style="font-size:.82rem;">Add a new app entry</p>
+        <div class="ri-card-body">
+          <span class="label">Researcher</span>
+          <h3>New App</h3>
+          <p class="ri-card-desc">Add a new app entry to the lab's digital tools collection.</p>
+          <span class="ri-read-more">Add App</span>
         </div>
       </div>
+      {% endif %}
 
     </div>
   </div>
@@ -67,6 +68,7 @@
   </div>
 </section>
 
+{% if session.get('researcher') %}
 <!-- New App Modal -->
 <div class="modal-backdrop" id="new-app-modal"
      onclick="if(event.target===this)this.classList.remove('open')">
@@ -79,11 +81,11 @@
     <form action="{{ url_for('apps_new') }}" method="post">
       <div class="form-group">
         <label>App Name *</label>
-        <input type="text" name="name" placeholder="e.g. Mind Therapy" required>
+        <input type="text" name="name" placeholder="e.g. MindCare" required>
       </div>
       <div class="form-group">
         <label>Full Name</label>
-        <input type="text" name="full_name" placeholder="e.g. Neurofeedback Stress Management">
+        <input type="text" name="full_name" placeholder="e.g. Mindfulness Recovery App">
       </div>
       <div class="form-group">
         <label>Label</label>
@@ -101,7 +103,7 @@
         </div>
         <div class="form-group">
           <label>Color Theme</label>
-          <select name="color" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.9rem;">
+          <select name="color" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-family:'Nunito Sans',sans-serif;font-size:.9rem;color:var(--text);">
             <option value="teal">Teal</option>
             <option value="blue">Blue</option>
             <option value="purple">Purple</option>
@@ -118,6 +120,7 @@
     </form>
   </div>
 </div>
+{% endif %}
 
 {% endblock %}
 
@@ -125,7 +128,7 @@
 <script>
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape')
-    document.getElementById('new-app-modal').classList.remove('open');
+    document.querySelectorAll('.modal-backdrop.open').forEach(m => m.classList.remove('open'));
 });
 </script>
 {% endblock %}

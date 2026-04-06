@@ -11,7 +11,8 @@
       "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_한글버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_kr_content.avif\")",
       "Bash(\"C:/Users/hpark/OneDrive/문서/TLS/tsl/apps_extra.json\")",
       "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/PLS_한글버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/pls_kr_content.avif\")",
-      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_영문버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_en_content.avif\")"
+      "Bash(cp \"C:/Users/hpark/OneDrive/Pictures/TLS_영문버전구성내용.avif\" \"C:/Users/hpark/OneDrive/문서/TLS/tsl/static/images/tls_en_content.avif\")",
+      "Bash(ls -la \"C:\\\\Users\\\\hpark\\\\OneDrive\\\\문서\\\\TSL\\\\web\\\\static\"\" && ls -la \"C:UsershparkOneDrive문서TSLwebtemplates\"\")"
     ]
   }
 }
