@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
-import os, httpx, json, csv, io, re
+import os, sqlite3, uuid as _uuid, json, csv, io, re
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
@@ -11,8 +11,8 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "tsl-dev-secret-2025")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal.db')
+PORTAL_FILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal_files')
 
 GALLERY_FOLDER    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images', 'gallery')
 GALLERY_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gallery_data.json')
@@ -50,21 +50,135 @@ def load_extra_pubs():
 def save_extra_pubs(data):
     with open(PUBS_EXTRA_FILE,'w',encoding='utf-8') as f: json.dump(data,f,ensure_ascii=False,indent=2)
 
-def sb(method, path, data=None, params=""):
-    if not SUPABASE_URL or not SUPABASE_KEY: return []
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-               "Content-Type": "application/json", "Prefer": "return=representation"}
-    url = f"{SUPABASE_URL}/rest/v1/{path}{params}"
+def init_db():
+    os.makedirs(PORTAL_FILES_DIR, exist_ok=True)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.executescript('''
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                app_type TEXT,
+                researcher_email TEXT NOT NULL,
+                created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS project_participants (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                code TEXT NOT NULL,
+                gender TEXT,
+                age INTEGER,
+                group_name TEXT,
+                enrolled_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS measurements (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                participant_id TEXT NOT NULL,
+                phase TEXT,
+                notes TEXT,
+                data TEXT DEFAULT '{}',
+                measured_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS project_variables (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                label TEXT,
+                var_type TEXT DEFAULT 'number',
+                unit TEXT
+            );
+            CREATE TABLE IF NOT EXISTS portal_files (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                filename TEXT NOT NULL,
+                original_name TEXT NOT NULL,
+                size INTEGER DEFAULT 0,
+                researcher_email TEXT NOT NULL,
+                uploaded_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+        ''')
+
+def _parse_sb_params(params):
+    filters, order_by, select_fields = {}, None, "*"
+    if not params:
+        return filters, order_by, select_fields
+    for part in params.lstrip("?").split("&"):
+        if not part or "=" not in part:
+            continue
+        key, val = part.split("=", 1)
+        if key == "select":
+            select_fields = val
+        elif key == "order":
+            pieces = val.split(".")
+            direction = "DESC" if len(pieces) > 1 and pieces[1].lower() == "desc" else "ASC"
+            order_by = f"{pieces[0]} {direction}"
+        elif val.startswith("eq."):
+            filters[key] = val[3:]
+    return filters, order_by, select_fields
+
+def sb(method, table, data=None, params=""):
+    filters, order_by, select_fields = _parse_sb_params(params)
+    conn = None
     try:
-        with httpx.Client(timeout=10) as c:
-            if method=="GET":     r=c.get(url,headers=headers)
-            elif method=="POST":  r=c.post(url,headers=headers,json=data)
-            elif method=="PATCH": r=c.patch(url,headers=headers,json=data)
-            elif method=="DELETE":r=c.delete(url,headers=headers)
-            else: return []
-        return r.json() if r.text else []
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        if method == "GET":
+            sql = f"SELECT {select_fields} FROM {table}"
+            vals = []
+            if filters:
+                sql += " WHERE " + " AND ".join(f"{k}=?" for k in filters)
+                vals = list(filters.values())
+            if order_by:
+                sql += f" ORDER BY {order_by}"
+            rows = conn.execute(sql, vals).fetchall()
+            result = []
+            for row in rows:
+                r = dict(row)
+                if "data" in r and isinstance(r["data"], str):
+                    try: r["data"] = json.loads(r["data"])
+                    except: pass
+                result.append(r)
+            return result
+        elif method == "POST":
+            if not data: return []
+            d = dict(data)
+            d.setdefault("id", str(_uuid.uuid4()))
+            if "data" in d and isinstance(d["data"], dict):
+                d["data"] = json.dumps(d["data"], ensure_ascii=False)
+            cols = list(d.keys())
+            conn.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})", [d[c] for c in cols])
+            conn.commit()
+            row = conn.execute(f"SELECT * FROM {table} WHERE id=?", [d["id"]]).fetchone()
+            if row:
+                r = dict(row)
+                if "data" in r and isinstance(r["data"], str):
+                    try: r["data"] = json.loads(r["data"])
+                    except: pass
+                return [r]
+            return []
+        elif method == "PATCH":
+            if not data or not filters: return []
+            d = dict(data)
+            if "data" in d and isinstance(d["data"], dict):
+                d["data"] = json.dumps(d["data"], ensure_ascii=False)
+            sql = f"UPDATE {table} SET {', '.join(f'{k}=?' for k in d)} WHERE {' AND '.join(f'{k}=?' for k in filters)}"
+            conn.execute(sql, list(d.values()) + list(filters.values()))
+            conn.commit()
+            return []
+        elif method == "DELETE":
+            if not filters: return []
+            sql = f"DELETE FROM {table} WHERE {' AND '.join(f'{k}=?' for k in filters)}"
+            conn.execute(sql, list(filters.values()))
+            conn.commit()
+            return []
     except Exception as e:
-        print(f"Supabase error: {e}"); return []
+        print(f"DB error [{method} {table}]: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+init_db()
 
 def login_required(f):
     @wraps(f)
@@ -809,6 +923,60 @@ def portal_project_stats(project_id):
     return render_template("portal_project_stats.html",
         project=proj[0],stats=stats,variables=variables if isinstance(variables,list) else [],
         researcher=session["researcher"])
+
+@app.route("/portal/files")
+@login_required
+def portal_files():
+    email = session["researcher"]
+    files = sb("GET", "portal_files", params=f"?researcher_email=eq.{email}&order=uploaded_at.desc") or []
+    return render_template("portal_files.html", files=files, researcher=email)
+
+@app.route("/portal/files/upload", methods=["POST"])
+@login_required
+def portal_files_upload():
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("파일을 선택해주세요.")
+        return redirect(url_for("portal_files"))
+    original = f.filename
+    safe = secure_filename(original)
+    if not safe:
+        flash("유효하지 않은 파일명입니다.")
+        return redirect(url_for("portal_files"))
+    uid = str(_uuid.uuid4())
+    ext = os.path.splitext(safe)[1]
+    stored = uid + ext
+    os.makedirs(PORTAL_FILES_DIR, exist_ok=True)
+    f.save(os.path.join(PORTAL_FILES_DIR, stored))
+    size = os.path.getsize(os.path.join(PORTAL_FILES_DIR, stored))
+    sb("POST", "portal_files", data={
+        "filename": stored, "original_name": original,
+        "size": size, "researcher_email": session["researcher"],
+        "project_id": request.form.get("project_id") or None,
+    })
+    flash(f"'{original}' 업로드 완료")
+    return redirect(url_for("portal_files"))
+
+@app.route("/portal/files/<file_id>/download")
+@login_required
+def portal_files_download(file_id):
+    rows = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
+    if not rows: return redirect(url_for("portal_files"))
+    row = rows[0]
+    path = os.path.join(PORTAL_FILES_DIR, row["filename"])
+    if not os.path.exists(path): return redirect(url_for("portal_files"))
+    from flask import send_file
+    return send_file(path, as_attachment=True, download_name=row["original_name"])
+
+@app.route("/portal/files/<file_id>/delete", methods=["POST"])
+@login_required
+def portal_files_delete(file_id):
+    rows = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
+    if rows:
+        path = os.path.join(PORTAL_FILES_DIR, rows[0]["filename"])
+        if os.path.exists(path): os.remove(path)
+        sb("DELETE", "portal_files", params=f"?id=eq.{file_id}")
+    return redirect(url_for("portal_files"))
 
 @app.route("/portal/settings")
 @login_required
