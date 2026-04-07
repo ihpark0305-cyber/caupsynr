@@ -494,75 +494,447 @@ def logout():
     session.clear()
     return redirect(url_for("home"))
 
-# ─── Researcher portal ───────────────────────────────────────
+# 프로젝트 기반 포털
+# ════════════════════════════════════════════════════
+
 @app.route("/portal")
 @login_required
 def portal():
-    participants = sb("GET","participants",params="?select=*&order=enrolled_at.desc") or []
-    sessions_all = sb("GET","sessions") or []
-    stats = {
-        "participants": len(participants) if isinstance(participants,list) else 0,
-        "sessions":     len(sessions_all) if isinstance(sessions_all,list) else 0,
-        "apps":         len(set(p.get("app_type","") for p in participants if isinstance(participants,list))),
-    }
-    recent_sessions = sb("GET","sessions",params="?select=*&order=created_at.desc&limit=10") or []
-    return render_template("portal.html", researcher=session["researcher"],
-                           stats=stats, recent_sessions=recent_sessions, participants=participants)
+    email = session["researcher"]
+    projects = sb("GET","projects",params=f"?researcher_email=eq.{email}&order=created_at.desc") or []
+    for p in (projects if isinstance(projects,list) else []):
+        pid = p.get("id","")
+        pcs = sb("GET","project_participants",params=f"?project_id=eq.{pid}&select=id") or []
+        mcs = sb("GET","measurements",params=f"?project_id=eq.{pid}&select=id") or []
+        p["participant_count"] = len(pcs) if isinstance(pcs,list) else 0
+        p["measurement_count"] = len(mcs) if isinstance(mcs,list) else 0
+    all_p = sb("GET","project_participants",params="?select=id") or []
+    all_m = sb("GET","measurements",params="?select=id") or []
+    return render_template("portal.html",
+        researcher=email,
+        projects=projects if isinstance(projects,list) else [],
+        total_participants=len(all_p) if isinstance(all_p,list) else 0,
+        total_measurements=len(all_m) if isinstance(all_m,list) else 0)
 
-@app.route("/portal/participants")
+@app.route("/portal/projects/new", methods=["POST"])
 @login_required
-def portal_participants():
-    participants = sb("GET","participants",params="?select=*&order=enrolled_at.desc") or []
-    return render_template("portal_participants.html", researcher=session["researcher"], participants=participants)
+def portal_project_new():
+    sb("POST","projects",data={
+        "name":            request.form.get("name","").strip(),
+        "description":     request.form.get("description","").strip(),
+        "researcher_email":session["researcher"],
+        "app_type":        request.form.get("app_type","").strip(),
+    })
+    return redirect(url_for("portal"))
 
-@app.route("/portal/participants/add", methods=["POST"])
+@app.route("/portal/projects/<project_id>")
 @login_required
-def portal_add_participant():
-    sb("POST","participants",data={"code":request.form.get("code","").strip(),"app_type":request.form.get("app_type","").strip()})
-    flash("참여자가 추가됐습니다.")
-    return redirect(url_for("portal_participants"))
+def portal_project(project_id):
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    project = proj[0]
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}&order=enrolled_at.desc") or []
+    measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.desc") or []
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    p_map = {p["id"]: p["code"] for p in (participants if isinstance(participants,list) else [])}
+    for m in (measurements_raw if isinstance(measurements_raw,list) else []):
+        m["participant_code"] = p_map.get(m.get("participant_id",""),"")
+    for p in (participants if isinstance(participants,list) else []):
+        p["mcount"] = sum(1 for m in (measurements_raw if isinstance(measurements_raw,list) else []) if m.get("participant_id")==p["id"])
+    return render_template("portal_project.html",
+        project=project,
+        participants=participants if isinstance(participants,list) else [],
+        measurements=measurements_raw if isinstance(measurements_raw,list) else [],
+        variables=variables if isinstance(variables,list) else [],
+        researcher=session["researcher"])
 
-@app.route("/portal/sessions")
+@app.route("/portal/projects/<project_id>/delete", methods=["POST"])
 @login_required
-def portal_sessions():
-    sessions = sb("GET","sessions",params="?select=*,participants(code,app_type)&order=created_at.desc") or []
-    return render_template("portal_sessions.html", researcher=session["researcher"], sessions=sessions)
+def portal_project_delete(project_id):
+    sb("DELETE","measurements",params=f"?project_id=eq.{project_id}")
+    sb("DELETE","project_participants",params=f"?project_id=eq.{project_id}")
+    sb("DELETE","project_variables",params=f"?project_id=eq.{project_id}")
+    sb("DELETE","projects",params=f"?id=eq.{project_id}")
+    flash("프로젝트가 삭제됐습니다.")
+    return redirect(url_for("portal"))
 
-@app.route("/portal/sessions/add", methods=["POST"])
+@app.route("/portal/projects/<project_id>/participants/add", methods=["POST"])
 @login_required
-def portal_add_session():
-    notes = request.form.get("notes","").strip()
-    pid   = request.form.get("participant_id","").strip()
-    raw   = request.form.get("data","").strip()
-    try:    data_json = json.loads(raw) if raw else {}
-    except: data_json = {"raw": raw}
-    sb("POST","sessions",data={"participant_id":pid,"notes":notes,"data":data_json})
-    flash("세션이 추가됐습니다.")
-    return redirect(url_for("portal_sessions"))
+def portal_project_add_participant(project_id):
+    age_raw = request.form.get("age","").strip()
+    sb("POST","project_participants",data={
+        "project_id":  project_id,
+        "code":        request.form.get("code","").strip(),
+        "gender":      request.form.get("gender","").strip() or None,
+        "age":         int(age_raw) if age_raw.isdigit() else None,
+        "group_name":  request.form.get("group_name","").strip() or None,
+    })
+    return redirect(url_for("portal_project", project_id=project_id))
 
-@app.route("/portal/export")
+@app.route("/portal/projects/<project_id>/participants/<participant_id>/delete", methods=["POST"])
 @login_required
-def portal_export():
-    sessions = sb("GET","sessions",params="?select=*,participants(code,app_type)&order=created_at.desc") or []
+def portal_project_delete_participant(project_id, participant_id):
+    sb("DELETE","measurements",params=f"?participant_id=eq.{participant_id}")
+    sb("DELETE","project_participants",params=f"?id=eq.{participant_id}")
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/participants/<participant_id>/edit", methods=["POST"])
+@login_required
+def portal_edit_participant(project_id, participant_id):
+    age_raw = request.form.get("age","").strip()
+    sb("PATCH","project_participants",
+       data={"gender":request.form.get("gender","").strip() or None,
+             "age":int(age_raw) if age_raw.isdigit() else None,
+             "group_name":request.form.get("group_name","").strip() or None},
+       params=f"?id=eq.{participant_id}")
+    return redirect(url_for("portal_participant_detail", project_id=project_id, participant_id=participant_id))
+
+@app.route("/portal/projects/<project_id>/participants/<participant_id>")
+@login_required
+def portal_participant_detail(project_id, participant_id):
+    import math
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    p_list = sb("GET","project_participants",params=f"?id=eq.{participant_id}")
+    if not p_list or not isinstance(p_list,list): return redirect(url_for("portal_project",project_id=project_id))
+    participant = p_list[0]
+    measurements = sb("GET","measurements",params=f"?participant_id=eq.{participant_id}&order=measured_at.asc") or []
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    changes = {}
+    if isinstance(measurements,list) and isinstance(variables,list):
+        pre_data  = next((m["data"] for m in measurements if m.get("phase") in ["사전","pre","1회차","T1"]), None)
+        post_data = next((m["data"] for m in measurements if m.get("phase") in ["사후","post","최종","T2"]), None)
+        if pre_data and post_data:
+            for v in variables:
+                vn = v["name"]
+                try:
+                    pre_val = float(pre_data.get(vn,0))
+                    post_val = float(post_data.get(vn,0))
+                    changes[vn] = {"pre":pre_val,"post":post_val,"diff":round(post_val-pre_val,2),
+                                   "label":v.get("label") or vn,"unit":v.get("unit","")}
+                except: pass
+    return render_template("portal_participant_detail.html",
+        project=proj[0], participant=participant,
+        measurements=measurements if isinstance(measurements,list) else [],
+        variables=variables if isinstance(variables,list) else [],
+        changes=changes, researcher=session["researcher"])
+
+@app.route("/portal/projects/<project_id>/measurements/add", methods=["POST"])
+@login_required
+def portal_project_add_measurement(project_id):
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    if variables and isinstance(variables,list):
+        data_dict = {}
+        for v in variables:
+            val = request.form.get(f"var_{v['name']}","").strip()
+            if val:
+                try:    data_dict[v["name"]] = float(val) if v.get("var_type")=="number" else val
+                except: data_dict[v["name"]] = val
+    else:
+        raw = request.form.get("data_json","").strip()
+        try:    data_dict = json.loads(raw) if raw else {}
+        except: data_dict = {"raw": raw}
+    sb("POST","measurements",data={
+        "project_id":     project_id,
+        "participant_id": request.form.get("participant_id","").strip(),
+        "phase":          request.form.get("phase","").strip() or None,
+        "notes":          request.form.get("notes","").strip() or None,
+        "data":           data_dict,
+    })
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/measurements/<measurement_id>/delete", methods=["POST"])
+@login_required
+def portal_project_delete_measurement(project_id, measurement_id):
+    sb("DELETE","measurements",params=f"?id=eq.{measurement_id}")
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/measurements/<measurement_id>/edit", methods=["POST"])
+@login_required
+def portal_edit_measurement(project_id, measurement_id):
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    if variables and isinstance(variables,list):
+        data_dict = {}
+        for v in variables:
+            val = request.form.get(f"var_{v['name']}","").strip()
+            if val:
+                try:    data_dict[v["name"]] = float(val) if v.get("var_type")=="number" else val
+                except: data_dict[v["name"]] = val
+    else:
+        raw = request.form.get("data_json","").strip()
+        try:    data_dict = json.loads(raw) if raw else {}
+        except: data_dict = {"raw": raw}
+    sb("PATCH","measurements",
+       data={"phase":request.form.get("phase","").strip() or None,
+             "notes":request.form.get("notes","").strip() or None,
+             "data":data_dict},
+       params=f"?id=eq.{measurement_id}")
+    return redirect(url_for("portal_participant_detail", project_id=project_id,
+                            participant_id=request.form.get("participant_id","")))
+
+@app.route("/portal/projects/<project_id>/variables/add", methods=["POST"])
+@login_required
+def portal_project_add_variable(project_id):
+    sb("POST","project_variables",data={
+        "project_id": project_id,
+        "name":       request.form.get("name","").strip(),
+        "label":      request.form.get("label","").strip() or None,
+        "var_type":   request.form.get("var_type","number"),
+        "unit":       request.form.get("unit","").strip() or None,
+    })
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/export")
+@login_required
+def portal_project_export(project_id):
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    proj_name = proj[0]["name"] if proj and isinstance(proj,list) else "project"
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+    measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.desc") or []
+    p_map = {p["id"]: p for p in (participants if isinstance(participants,list) else [])}
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["session_id","participant_code","app_type","session_date","notes","data"])
-    for s in (sessions if isinstance(sessions,list) else []):
-        p = s.get("participants") or {}
-        writer.writerow([s.get("id",""),p.get("code",""),p.get("app_type",""),
-                         s.get("session_date",""),s.get("notes",""),json.dumps(s.get("data",{}),ensure_ascii=False)])
+    writer.writerow(["participant_code","group","gender","age","phase","measured_at","notes","data"])
+    for m in (measurements if isinstance(measurements,list) else []):
+        p = p_map.get(m.get("participant_id",""), {})
+        writer.writerow([p.get("code",""),p.get("group_name",""),p.get("gender",""),p.get("age",""),
+                         m.get("phase",""),m.get("measured_at","")[:10],
+                         m.get("notes",""),json.dumps(m.get("data",{}),ensure_ascii=False)])
     output.seek(0)
+    safe = proj_name.replace(" ","_")
     return Response(output.getvalue(), mimetype="text/csv",
-                    headers={"Content-Disposition":f"attachment;filename=tsl_sessions_{datetime.now().strftime('%Y%m%d')}.csv"})
+        headers={"Content-Disposition":f"attachment;filename={safe}_{datetime.now().strftime('%Y%m%d')}.csv"})
+
+@app.route("/portal/projects/<project_id>/upload", methods=["POST"])
+@login_required
+def portal_project_upload(project_id):
+    f = request.files.get("file")
+    if not f or not f.filename:
+        flash("파일을 선택해주세요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    fname = f.filename.lower()
+    rows = []
+    try:
+        if fname.endswith(".csv"):
+            import io as _io
+            content = f.read().decode("utf-8-sig")
+            reader = csv.DictReader(_io.StringIO(content))
+            rows = list(reader)
+        elif fname.endswith((".xlsx",".xls")):
+            import tempfile, openpyxl
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+            f.save(tmp.name)
+            wb = openpyxl.load_workbook(tmp.name, read_only=True)
+            ws = wb.active
+            headers = [str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                rows.append({headers[i]: (str(v).strip() if v is not None else "") for i,v in enumerate(row)})
+            wb.close()
+        else:
+            flash("CSV 또는 Excel 파일만 업로드 가능해요.")
+            return redirect(url_for("portal_project", project_id=project_id))
+    except Exception as e:
+        flash(f"파일 읽기 오류: {e}")
+        return redirect(url_for("portal_project", project_id=project_id))
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    var_names = [v["name"] for v in (variables if isinstance(variables,list) else [])]
+    existing = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+    p_map = {p["code"]: p["id"] for p in (existing if isinstance(existing,list) else [])}
+    added_p = added_m = errors = 0
+    for row in rows:
+        code = str(row.get("code") or row.get("참여자코드") or "").strip()
+        if not code: errors+=1; continue
+        if code not in p_map:
+            age_raw = str(row.get("age") or row.get("나이") or "").strip()
+            new_p = sb("POST","project_participants",data={
+                "project_id":project_id,"code":code,
+                "gender":str(row.get("gender") or row.get("성별") or "").strip() or None,
+                "age":int(age_raw) if age_raw.isdigit() else None,
+                "group_name":str(row.get("group") or row.get("그룹") or "").strip() or None,
+            })
+            if new_p and isinstance(new_p,list): p_map[code]=new_p[0]["id"]; added_p+=1
+        pid = p_map.get(code)
+        if not pid: errors+=1; continue
+        phase = str(row.get("phase") or row.get("회차") or "").strip() or None
+        notes = str(row.get("notes") or row.get("메모") or "").strip() or None
+        data_dict = {}
+        skip = {"code","참여자코드","gender","성별","age","나이","group","그룹","group_name","phase","회차","notes","메모"}
+        for k,v in row.items():
+            if k not in skip and v:
+                try: data_dict[k]=float(v)
+                except: data_dict[k]=v
+        if data_dict:
+            sb("POST","measurements",data={"project_id":project_id,"participant_id":pid,
+                                           "phase":phase,"notes":notes,"data":data_dict})
+            added_m+=1
+    flash(f"업로드 완료 — 참여자 {added_p}명, 측정 {added_m}건 추가" + (f", {errors}행 오류" if errors else ""))
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/stats")
+@login_required
+def portal_project_stats(project_id):
+    import math
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
+    variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+    stats = {}
+    if isinstance(measurements,list) and isinstance(variables,list):
+        for v in variables:
+            vn = v["name"]
+            all_vals = []; by_phase = {}
+            for m in measurements:
+                val = m.get("data",{}).get(vn) if m.get("data") else None
+                if val is not None:
+                    try:
+                        fval=float(val); all_vals.append(fval)
+                        ph=m.get("phase","전체") or "전체"
+                        by_phase.setdefault(ph,[]).append(fval)
+                    except: pass
+            def calc(vals):
+                if not vals: return {}
+                n=len(vals); avg=sum(vals)/n
+                sd=math.sqrt(sum((x-avg)**2 for x in vals)/n) if n>1 else 0
+                s=sorted(vals); med=s[n//2] if n%2 else (s[n//2-1]+s[n//2])/2
+                return {"n":n,"mean":round(avg,2),"sd":round(sd,2),"median":round(med,2),"min":round(min(vals),2),"max":round(max(vals),2)}
+            outliers = []
+            if len(all_vals)>=4:
+                s=sorted(all_vals); q1=s[len(s)//4]; q3=s[3*len(s)//4]; iqr=q3-q1; lb,ub=q1-1.5*iqr,q3+1.5*iqr
+                for m in measurements:
+                    val=m.get("data",{}).get(vn) if m.get("data") else None
+                    if val is not None:
+                        try:
+                            fval=float(val)
+                            if fval<lb or fval>ub: outliers.append({"value":fval})
+                        except: pass
+            missing=[]
+            phases=list({m.get("phase","") for m in measurements if m.get("phase")})
+            for p in (participants if isinstance(participants,list) else []):
+                p_ms=[m for m in measurements if m.get("participant_id")==p["id"]]
+                for ph in phases:
+                    if not any(m.get("phase")==ph and m.get("data",{}).get(vn) is not None for m in p_ms):
+                        missing.append({"code":p["code"],"phase":ph})
+            stats[vn]={"label":v.get("label") or vn,"unit":v.get("unit",""),
+                       "overall":calc(all_vals),"by_phase":{ph:calc(vals) for ph,vals in by_phase.items()},
+                       "outliers":outliers,"missing":missing}
+    return render_template("portal_project_stats.html",
+        project=proj[0],stats=stats,variables=variables if isinstance(variables,list) else [],
+        researcher=session["researcher"])
+
+@app.route("/portal/settings")
+@login_required
+def portal_settings():
+    return render_template("portal_settings.html", researcher=session["researcher"])
+
+@app.route("/portal/settings/password", methods=["POST"])
+@login_required
+def portal_change_password():
+    current=request.form.get("current","").strip()
+    new_pw=request.form.get("new_pw","").strip()
+    confirm=request.form.get("confirm","").strip()
+    email=session["researcher"]
+    if RESEARCHER_ACCOUNTS.get(email)!=current: flash("현재 비밀번호가 틀렸어요."); return redirect(url_for("portal_settings"))
+    if new_pw!=confirm: flash("새 비밀번호가 일치하지 않아요."); return redirect(url_for("portal_settings"))
+    if len(new_pw)<6: flash("비밀번호는 6자 이상이어야 해요."); return redirect(url_for("portal_settings"))
+    RESEARCHER_ACCOUNTS[email]=new_pw
+    flash("비밀번호가 변경됐어요.")
+    return redirect(url_for("portal_settings"))
+
+@app.route("/portal/settings/add-account", methods=["POST"])
+@login_required
+def portal_add_account():
+    new_email=request.form.get("email","").strip()
+    new_pw=request.form.get("password","").strip()
+    if not new_email or not new_pw: flash("이메일과 비밀번호를 입력해주세요."); return redirect(url_for("portal_settings"))
+    if new_email in RESEARCHER_ACCOUNTS: flash("이미 존재하는 계정이에요."); return redirect(url_for("portal_settings"))
+    RESEARCHER_ACCOUNTS[new_email]=new_pw
+    flash(f"{new_email} 계정이 추가됐어요.")
+    return redirect(url_for("portal_settings"))
+
+@app.route("/portal/merge")
+@login_required
+def portal_merge():
+    email=session["researcher"]
+    projects=sb("GET","projects",params=f"?researcher_email=eq.{email}&order=created_at.desc") or []
+    return render_template("portal_merge.html",researcher=email,
+        projects=projects if isinstance(projects,list) else [])
+
+@app.route("/portal/merge/preview", methods=["POST"])
+@login_required
+def portal_merge_preview():
+    p1_id=request.form.get("project1_id",""); p2_id=request.form.get("project2_id","")
+    if not p1_id or not p2_id or p1_id==p2_id: flash("서로 다른 프로젝트를 선택해주세요."); return redirect(url_for("portal_merge"))
+    p1=sb("GET","projects",params=f"?id=eq.{p1_id}"); p2=sb("GET","projects",params=f"?id=eq.{p2_id}")
+    p1_parts=sb("GET","project_participants",params=f"?project_id=eq.{p1_id}") or []
+    p2_parts=sb("GET","project_participants",params=f"?project_id=eq.{p2_id}") or []
+    p1_codes={p["code"] for p in (p1_parts if isinstance(p1_parts,list) else [])}
+    p2_codes={p["code"] for p in (p2_parts if isinstance(p2_parts,list) else [])}
+    return render_template("portal_merge.html",researcher=session["researcher"],
+        projects=sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&order=created_at.desc") or [],
+        preview=True,project1=p1[0] if p1 else {},project2=p2[0] if p2 else {},
+        common=sorted(p1_codes&p2_codes),only_p1=sorted(p1_codes-p2_codes),only_p2=sorted(p2_codes-p1_codes),
+        p1_id=p1_id,p2_id=p2_id)
+
+@app.route("/portal/merge/execute", methods=["POST"])
+@login_required
+def portal_merge_execute():
+    p1_id=request.form.get("p1_id",""); p2_id=request.form.get("p2_id","")
+    new_name=request.form.get("new_name","").strip() or "병합 프로젝트"
+    new_proj=sb("POST","projects",data={"name":new_name,"description":f"병합: {p1_id[:8]}+{p2_id[:8]}",
+        "researcher_email":session["researcher"]})
+    if not new_proj or not isinstance(new_proj,list): flash("병합 실패"); return redirect(url_for("portal_merge"))
+    new_pid=new_proj[0]["id"]
+    all_vars={}
+    for src in [p1_id,p2_id]:
+        for v in (sb("GET","project_variables",params=f"?project_id=eq.{src}") or []):
+            all_vars[v["name"]]=v
+    for vn,v in all_vars.items():
+        sb("POST","project_variables",data={"project_id":new_pid,"name":vn,
+            "label":v.get("label"),"var_type":v.get("var_type","number"),"unit":v.get("unit")})
+    p_code_map={}
+    for src in [p1_id,p2_id]:
+        for p in (sb("GET","project_participants",params=f"?project_id=eq.{src}") or []):
+            if p["code"] not in p_code_map:
+                new_p=sb("POST","project_participants",data={"project_id":new_pid,"code":p["code"],
+                    "gender":p.get("gender"),"age":p.get("age"),"group_name":p.get("group_name")})
+                if new_p and isinstance(new_p,list): p_code_map[p["code"]]=new_p[0]["id"]
+    for src_pid in [p1_id,p2_id]:
+        src_parts=sb("GET","project_participants",params=f"?project_id=eq.{src_pid}") or []
+        src_map={p["id"]:p["code"] for p in (src_parts if isinstance(src_parts,list) else [])}
+        tag="P1" if src_pid==p1_id else "P2"
+        for m in (sb("GET","measurements",params=f"?project_id=eq.{src_pid}") or []):
+            code=src_map.get(m.get("participant_id",""),"")
+            new_pid2=p_code_map.get(code)
+            if not new_pid2: continue
+            sb("POST","measurements",data={"project_id":new_pid,"participant_id":new_pid2,
+                "phase":f"[{tag}] {m.get('phase','')}" if m.get("phase") else tag,
+                "notes":m.get("notes"),"data":m.get("data",{})})
+    flash(f"병합 완료! '{new_name}' 프로젝트가 생성됐어요.")
+    return redirect(url_for("portal_project", project_id=new_pid))
+
+@app.route("/portal/all/participants")
+@login_required
+def portal_all_participants():
+    participants=sb("GET","project_participants",params="?select=*,projects(name)&order=enrolled_at.desc") or []
+    return render_template("portal_participants.html",researcher=session["researcher"],
+        participants=participants if isinstance(participants,list) else [])
+
+@app.route("/portal/all/sessions")
+@login_required
+def portal_all_sessions():
+    sessions=sb("GET","sessions",params="?select=*,participants(code,app_type)&order=created_at.desc") or []
+    return render_template("portal_sessions.html",researcher=session["researcher"],
+        sessions=sessions if isinstance(sessions,list) else [])
 
 @app.route("/api/sessions", methods=["POST"])
 def api_receive_session():
-    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
-        return jsonify({"error":"Unauthorized"}), 401
-    payload = request.get_json(silent=True) or {}
-    result = sb("POST","sessions",data={"participant_id":payload.get("participant_id"),
-                                        "data":payload.get("data",{}),"notes":payload.get("notes","")})
-    return jsonify({"ok":True,"result":result}), 201
+    if request.headers.get("X-API-Key","")!=os.getenv("APP_API_KEY","tsl-app-key-2025"):
+        return jsonify({"error":"Unauthorized"}),401
+    payload=request.get_json(silent=True) or {}
+    result=sb("POST","sessions",data={"participant_id":payload.get("participant_id"),
+                                      "data":payload.get("data",{}),"notes":payload.get("notes","")})
+    return jsonify({"ok":True,"result":result}),201
 
 if __name__ == "__main__":
     app.run(debug=False)

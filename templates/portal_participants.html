@@ -1,93 +1,108 @@
 {% extends "base.html" %}
-{% block title %}참여자 관리 · 연구자 포털{% endblock %}
+{% block title %}전체 참여자 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:24px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+.data-table th{padding:10px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.data-table td{padding:10px 16px;border-top:1px solid var(--border-light);}
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+.filter-bar select,.filter-bar input{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-size:.83rem;color:var(--text);outline:none;}
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="background:var(--dark);padding:32px 0 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-  <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:6px;">Researcher Portal</span>
-      <h1 style="color:#fff;font-size:1.8rem;margin:0;">참여자 관리</h1>
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <a href="{{ url_for('portal') }}" style="color:rgba(255,255,255,.4);font-size:.8rem;text-decoration:none;">← 프로젝트 목록</a>
+        <h1 style="color:#fff;font-size:1.5rem;margin:6px 0 0;">전체 참여자</h1>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
     </div>
-    <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:8px 16px;">로그아웃</a>
+  </div>
+
+  <div style="background:var(--surface);border-bottom:1px solid var(--border);">
+    <div class="container" style="display:flex;gap:2px;padding-left:28px;padding-right:28px;">
+      <a href="{{ url_for('portal') }}" class="pnav-btn">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn active">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn">전체 세션</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+
+    <!-- 필터 -->
+    <div class="filter-bar">
+      <input type="text" id="filter-code" placeholder="코드 검색…" oninput="filterTable()">
+      <select id="filter-gender" onchange="filterTable()">
+        <option value="">성별 전체</option>
+        <option value="남">남</option>
+        <option value="여">여</option>
+      </select>
+      <select id="filter-group" onchange="filterTable()">
+        <option value="">그룹 전체</option>
+        {% set groups = [] %}
+        {% for p in participants %}
+          {% if p.group_name and p.group_name not in groups %}
+            {% set _ = groups.append(p.group_name) %}
+            <option value="{{ p.group_name }}">{{ p.group_name }}</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+      <span style="font-size:.82rem;color:var(--muted);" id="filter-count">총 {{ participants|length }}명</span>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+      {% if participants %}
+      <table class="data-table" id="participants-table">
+        <thead><tr>
+          <th>코드</th><th>프로젝트</th><th>성별</th><th>나이</th><th>그룹</th><th>등록일</th>
+        </tr></thead>
+        <tbody>
+        {% for p in participants %}
+        <tr data-code="{{ p.code }}" data-gender="{{ p.gender or '' }}" data-group="{{ p.group_name or '' }}">
+          <td style="font-weight:700;color:var(--accent);">{{ p.code }}</td>
+          <td style="font-size:.82rem;color:var(--muted);">
+            {% if p.projects %}{{ p.projects.name }}{% else %}—{% endif %}
+          </td>
+          <td>{{ p.gender or '—' }}</td>
+          <td>{{ p.age or '—' }}</td>
+          <td>{% if p.group_name %}<span style="font-size:.75rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ p.group_name }}</span>{% else %}—{% endif %}</td>
+          <td style="color:var(--muted);">{{ p.enrolled_at[:10] }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:48px;text-align:center;color:var(--muted);">등록된 참여자가 없어요.</div>
+      {% endif %}
+    </div>
   </div>
 </div>
+{% endblock %}
 
-<section style="background:var(--surface2);">
-  <div class="container">
-
-    <!-- Nav -->
-    <div style="display:flex;gap:4px;margin-bottom:36px;border-bottom:1px solid var(--border);padding-bottom:0;">
-      <a href="{{ url_for('portal') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">대시보드</a>
-      <a href="{{ url_for('portal_participants') }}" style="font-size:.85rem;font-weight:600;padding:10px 18px;border-radius:8px 8px 0 0;background:var(--accent);color:#fff;">참여자 관리</a>
-      <a href="{{ url_for('portal_sessions') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">세션 기록</a>
-      <a href="{{ url_for('portal_export') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--accent);">CSV 내보내기 ↓</a>
-    </div>
-
-    {% with messages = get_flashed_messages() %}
-    {% if messages %}
-    <div style="background:var(--accent-light);border:1px solid var(--accent);border-radius:var(--radius);padding:12px 18px;margin-bottom:20px;color:var(--accent);font-size:.9rem;font-weight:600;">
-      {{ messages[0] }}
-    </div>
-    {% endif %}
-    {% endwith %}
-
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:32px;align-items:start;">
-
-      <!-- 참여자 목록 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
-        <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
-          <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;">참여자 목록 ({{ participants|length }}명)</h3>
-        </div>
-        {% if participants %}
-        <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
-          <thead>
-            <tr style="background:var(--bg);">
-              <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">코드</th>
-              <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">앱</th>
-              <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">등록일</th>
-              <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for p in participants %}
-            <tr style="border-top:1px solid var(--border-light);">
-              <td style="padding:12px 20px;font-weight:700;color:var(--accent);">{{ p.get('code','—') }}</td>
-              <td style="padding:12px 20px;">
-                <span style="background:var(--accent-light);color:var(--accent);font-size:.75rem;font-weight:600;padding:3px 10px;border-radius:100px;">{{ p.get('app_type','—') }}</span>
-              </td>
-              <td style="padding:12px 20px;color:var(--muted);">{{ p.get('enrolled_at','')[:10] }}</td>
-              <td style="padding:12px 20px;color:var(--muted);font-size:.78rem;font-family:monospace;">{{ p.get('id','')[:8] }}…</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div style="padding:48px;text-align:center;color:var(--muted);">아직 등록된 참여자가 없어요.</div>
-        {% endif %}
-      </div>
-
-      <!-- 참여자 추가 폼 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;">
-        <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;margin-bottom:20px;">참여자 추가</h3>
-        <form action="{{ url_for('portal_add_participant') }}" method="POST">
-          <div class="form-group">
-            <label>참여자 코드 <span style="color:var(--muted);font-weight:400;">(예: P001)</span></label>
-            <input type="text" name="code" placeholder="P001" required>
-          </div>
-          <div class="form-group">
-            <label>사용 앱</label>
-            <select name="app_type" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:'Nunito Sans',sans-serif;font-size:.9rem;color:var(--text);outline:none;">
-              <option value="Mobile PLS">Mobile PLS</option>
-              <option value="Mobile TLS">Mobile TLS</option>
-              <option value="Mind Therapy">Mind Therapy</option>
-              <option value="NeuroBreezy">NeuroBreezy</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;">추가하기</button>
-        </form>
-      </div>
-
-    </div>
-  </div>
-</section>
+{% block scripts %}
+<script>
+function filterTable() {
+  const code   = document.getElementById('filter-code').value.toLowerCase();
+  const gender = document.getElementById('filter-gender').value;
+  const group  = document.getElementById('filter-group').value;
+  const rows   = document.querySelectorAll('#participants-table tbody tr');
+  let visible  = 0;
+  rows.forEach(r => {
+    const show = (!code   || r.dataset.code.toLowerCase().includes(code)) &&
+                 (!gender || r.dataset.gender === gender) &&
+                 (!group  || r.dataset.group === group);
+    r.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('filter-count').textContent = `총 ${visible}명`;
+}
+</script>
 {% endblock %}

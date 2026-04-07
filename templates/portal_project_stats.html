@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}기술통계 · {{ project.name }}{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:24px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.stat-tbl{width:100%;border-collapse:collapse;font-size:.85rem;}
+.stat-tbl th{padding:9px 14px;text-align:center;font-weight:600;color:var(--muted);font-size:.73rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.stat-tbl td{padding:9px 14px;border-top:1px solid var(--border-light);text-align:center;}
+.stat-tbl td:first-child{text-align:left;font-weight:600;}
+.badge-warn{font-size:.72rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:100px;}
+.badge-miss{font-size:.72rem;background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:100px;}
+.var-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:20px;overflow:hidden;}
+.var-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg);}
+.var-body{padding:0;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <a href="{{ url_for('portal_project', project_id=project.id) }}" style="color:rgba(255,255,255,.4);font-size:.8rem;text-decoration:none;">← {{ project.name }}</a>
+        <h1 style="color:#fff;font-size:1.5rem;margin:6px 0 0;">기술통계</h1>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+    {% if not stats %}
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:56px;text-align:center;color:var(--muted);">
+      변수 설정과 측정 데이터를 먼저 입력해주세요.
+    </div>
+    {% endif %}
+
+    {% for vname, s in stats.items() %}
+    <div class="var-section">
+      <div class="var-header">
+        <div>
+          <strong style="font-family:'Nunito',sans-serif;">{{ s.label }}</strong>
+          {% if s.unit %}<span style="font-size:.78rem;color:var(--muted);margin-left:6px;">단위: {{ s.unit }}</span>{% endif %}
+        </div>
+        <div style="display:flex;gap:8px;">
+          {% if s.outliers %}<span class="badge-warn">이상값 {{ s.outliers|length }}건</span>{% endif %}
+          {% if s.missing  %}<span class="badge-miss">결측값 {{ s.missing|length }}건</span>{% endif %}
+        </div>
+      </div>
+
+      <!-- 전체 통계 -->
+      {% if s.overall %}
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border-light);">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">전체</p>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
+          {% for key, label in [('n','N'),('mean','평균'),('sd','SD'),('median','중앙값'),('min','최솟값'),('max','최댓값')] %}
+          <div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center;">
+            <div style="font-size:.7rem;color:var(--muted);margin-bottom:4px;">{{ label }}</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--accent);">{{ s.overall.get(key,'—') }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- 회차별 통계 -->
+      {% if s.by_phase %}
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border-light);overflow-x:auto;">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">회차별</p>
+        <table class="stat-tbl">
+          <thead><tr>
+            <th style="text-align:left;">회차</th><th>N</th><th>평균</th><th>SD</th><th>중앙값</th><th>최솟값</th><th>최댓값</th>
+          </tr></thead>
+          <tbody>
+          {% for phase, ps in s.by_phase.items() %}
+          <tr>
+            <td><span style="font-size:.78rem;background:var(--accent-light);color:var(--accent);padding:2px 8px;border-radius:100px;">{{ phase }}</span></td>
+            <td>{{ ps.get('n','—') }}</td>
+            <td style="font-weight:600;">{{ ps.get('mean','—') }}</td>
+            <td>{{ ps.get('sd','—') }}</td>
+            <td>{{ ps.get('median','—') }}</td>
+            <td>{{ ps.get('min','—') }}</td>
+            <td>{{ ps.get('max','—') }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      <!-- 이상값 -->
+      {% if s.outliers %}
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border-light);">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#92400e;margin-bottom:8px;">이상값 (IQR ×1.5 기준)</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          {% for o in s.outliers %}
+          <span style="font-size:.8rem;background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:8px;">
+            값: {{ o.value }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- 결측값 -->
+      {% if s.missing %}
+      <div style="padding:14px 20px;">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#991b1b;margin-bottom:8px;">결측값</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          {% for m in s.missing %}
+          <span style="font-size:.8rem;background:#fee2e2;color:#991b1b;padding:4px 10px;border-radius:8px;">
+            {{ m.code }} / {{ m.phase }}
+          </span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

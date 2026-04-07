@@ -1,0 +1,415 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · 연구자 포털{% endblock %}
+
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:24px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.portal-header-inner{display:flex;justify-content:space-between;align-items:center;}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;text-align:center;}
+.stat-num{font-family:'Nunito',sans-serif;font-size:2.4rem;font-weight:800;color:var(--accent);line-height:1;}
+.stat-lbl{font-size:.78rem;color:var(--muted);margin-top:6px;font-weight:600;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+.tab-btn{font-size:.83rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;}
+.tab-btn.active{background:var(--accent);color:#fff;border-bottom-color:var(--accent);}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+.data-table th{padding:10px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.data-table td{padding:10px 16px;border-top:1px solid var(--border-light);}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:520px;margin:20px;max-height:90vh;overflow-y:auto;}
+.modal-box h3{font-family:'Nunito',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:20px;}
+.phase-badge{font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:100px;background:var(--accent-light);color:var(--accent);}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container portal-header-inner">
+      <div>
+        <a href="{{ url_for('portal') }}" style="color:rgba(255,255,255,.4);font-size:.8rem;text-decoration:none;">← 프로젝트 목록</a>
+        <h1 style="color:#fff;font-size:1.5rem;margin:6px 0 2px;">{{ project.name }}</h1>
+        <span style="color:rgba(255,255,255,.4);font-size:.82rem;">
+          {% if project.app_type %}{{ project.app_type }} · {% endif %}
+          {{ project.created_at[:10] }} 생성
+        </span>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <a href="{{ url_for('portal_project_export', project_id=project.id) }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">CSV ↓</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab nav -->
+  <div style="background:var(--surface);border-bottom:1px solid var(--border);">
+    <div class="container" style="display:flex;gap:2px;padding-left:28px;padding-right:28px;">
+      <a href="#" class="tab-btn active" onclick="showTab('overview',this);return false;">개요</a>
+      <a href="#" class="tab-btn" onclick="showTab('participants',this);return false;">참여자 ({{ participants|length }})</a>
+      <a href="#" class="tab-btn" onclick="showTab('measurements',this);return false;">측정 데이터 ({{ measurements|length }})</a>
+      <a href="#" class="tab-btn" onclick="showTab('visualize',this);return false;">시각화</a>
+      <a href="#" class="tab-btn" onclick="showTab('variables',this);return false;">변수 설정</a>
+      <a href="{{ url_for('portal_project_stats', project_id=project.id) }}" class="tab-btn" style="text-decoration:none;">기술통계</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+
+    <!-- ── 개요 탭 ── -->
+    <div id="tab-overview" class="tab-content active">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">
+        <div class="stat-card"><div class="stat-num">{{ participants|length }}</div><div class="stat-lbl">등록 참여자</div></div>
+        <div class="stat-card"><div class="stat-num">{{ measurements|length }}</div><div class="stat-lbl">측정 기록</div></div>
+        <div class="stat-card"><div class="stat-num">{{ variables|length }}</div><div class="stat-lbl">측정 변수</div></div>
+      </div>
+      {% if project.description %}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;">프로젝트 설명</h4>
+        <p style="color:var(--text);font-size:.95rem;line-height:1.7;">{{ project.description }}</p>
+      </div>
+      {% endif %}
+      <div style="background:var(--accent-light);border:1px solid var(--accent);border-radius:var(--radius);padding:14px 18px;font-size:.85rem;color:var(--accent);">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;"><form action="{{ url_for('portal_project_delete', project_id=project.id) }}" method="POST" onsubmit="return confirm('프로젝트를 삭제할까요? 모든 데이터가 함께 삭제됩니다.')"><button type="submit" style="font-size:.8rem;color:#c0392b;background:none;border:1px solid #c0392b;padding:6px 12px;border-radius:8px;cursor:pointer;">프로젝트 삭제</button></form></div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:14px;">
+      <p style="font-size:.85rem;font-weight:600;margin-bottom:10px;">Excel/CSV 일괄 업로드</p>
+      <form action="{{ url_for('portal_project_upload', project_id=project.id) }}" method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;">
+        <input type="file" name="file" accept=".csv,.xlsx,.xls" style="font-size:.83rem;flex:1;">
+        <button type="submit" class="btn btn-outline" style="font-size:.83rem;white-space:nowrap;">업로드</button>
+      </form>
+      <p style="font-size:.75rem;color:var(--muted);margin-top:8px;">컬럼: code, gender, age, group, phase, notes + 변수명들</p>
+      </div>
+      💡 참여자 탭에서 참여자를 추가하고, 측정 데이터 탭에서 데이터를 입력하세요. 변수 설정 탭에서 측정 항목을 먼저 정의하면 더 체계적으로 관리할 수 있어요.
+      </div>
+    </div>
+
+    <!-- ── 참여자 탭 ── -->
+    <div id="tab-participants" class="tab-content">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="document.getElementById('add-participant-modal').classList.add('open')" style="font-size:.85rem;">+ 참여자 추가</button>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        {% if participants %}
+        <table class="data-table">
+          <thead><tr>
+            <th>코드</th><th>성별</th><th>나이</th><th>그룹</th><th>등록일</th><th>측정 수</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for p in participants %}
+          <tr>
+            <td style="font-weight:700;color:var(--accent);"><a href="{{ url_for('portal_participant_detail', project_id=project.id, participant_id=p.id) }}" style="color:var(--accent);text-decoration:none;">{{ p.code }}</a></td>
+            <td>{{ p.gender or '—' }}</td>
+            <td>{{ p.age or '—' }}</td>
+            <td>{% if p.group_name %}<span style="font-size:.75rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ p.group_name }}</span>{% else %}—{% endif %}</td>
+            <td style="color:var(--muted);">{{ p.enrolled_at[:10] }}</td>
+            <td style="color:var(--muted);">{{ p.mcount }}건</td>
+            <td><form action="{{ url_for('portal_project_delete_participant', project_id=project.id, participant_id=p.id) }}" method="POST" onsubmit="return confirm('삭제?')"><button type="submit" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.78rem;">삭제</button></form></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div style="padding:48px;text-align:center;color:var(--muted);">아직 등록된 참여자가 없어요.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── 측정 데이터 탭 ── -->
+    <div id="tab-measurements" class="tab-content">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="document.getElementById('add-measurement-modal').classList.add('open')" style="font-size:.85rem;">+ 데이터 입력</button>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        {% if measurements %}
+        <table class="data-table">
+          <thead><tr>
+            <th>참여자</th><th>회차</th><th>측정일</th><th>데이터</th><th>메모</th>
+          </tr></thead>
+          <tbody>
+          {% for m in measurements %}
+          <tr>
+            <td style="font-weight:700;color:var(--accent);">{{ m.participant_code or m.participant_id[:8] }}</td>
+            <td><span class="phase-badge">{{ m.phase or '—' }}</span></td>
+            <td style="color:var(--muted);">{{ m.measured_at[:10] }}</td>
+            <td style="font-family:monospace;font-size:.78rem;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              {{ m.data | tojson if m.data else '—' }}
+            </td>
+            <td style="color:var(--muted);">{{ (m.notes or '—')[:40] }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div style="padding:48px;text-align:center;color:var(--muted);">아직 입력된 측정 데이터가 없어요.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── 시각화 탭 ── -->
+    <div id="tab-visualize" class="tab-content">
+      {% if measurements and variables %}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;">
+          <div class="form-group" style="margin:0;min-width:160px;">
+            <label style="font-size:.78rem;">변수 선택</label>
+            <select id="viz-var" onchange="updateChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+              {% for v in variables %}
+              <option value="{{ v.name }}">{{ v.label or v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">차트 유형</label>
+            <select id="viz-type" onchange="updateChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+              <option value="bar">막대그래프</option>
+              <option value="line">선그래프</option>
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">그룹 기준</label>
+            <select id="viz-group" onchange="updateChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+              <option value="phase">회차별</option>
+              <option value="participant">참여자별</option>
+            </select>
+          </div>
+        </div>
+        <canvas id="viz-chart" style="max-height:380px;"></canvas>
+      </div>
+      {% else %}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:56px;text-align:center;color:var(--muted);">
+        <p style="margin-bottom:12px;">시각화를 사용하려면 변수 설정과 측정 데이터가 필요해요.</p>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button class="btn btn-outline" onclick="showTab('variables',null)" style="font-size:.83rem;">변수 설정하기</button>
+          <button class="btn btn-primary" onclick="showTab('measurements',null)" style="font-size:.83rem;">데이터 입력하기</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ── 변수 설정 탭 ── -->
+    <div id="tab-variables" class="tab-content">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="document.getElementById('add-variable-modal').classList.add('open')" style="font-size:.85rem;">+ 변수 추가</button>
+      </div>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        {% if variables %}
+        <table class="data-table">
+          <thead><tr><th>변수명</th><th>표시 이름</th><th>유형</th><th>단위</th></tr></thead>
+          <tbody>
+          {% for v in variables %}
+          <tr>
+            <td style="font-family:monospace;font-weight:600;color:var(--accent);">{{ v.name }}</td>
+            <td>{{ v.label or '—' }}</td>
+            <td><span style="font-size:.75rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ v.var_type }}</span></td>
+            <td style="color:var(--muted);">{{ v.unit or '—' }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div style="padding:48px;text-align:center;color:var(--muted);">
+          <p style="margin-bottom:12px;">측정할 변수를 먼저 등록해주세요.</p>
+          <p style="font-size:.82rem;">예: stress_score, ptsd_score, sleep_quality 등</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 참여자 추가 모달 -->
+<div class="modal-overlay" id="add-participant-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>참여자 추가</h3>
+    <form action="{{ url_for('portal_project_add_participant', project_id=project.id) }}" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>참여자 코드 *</label>
+          <input type="text" name="code" placeholder="P001" required>
+        </div>
+        <div class="form-group">
+          <label>그룹</label>
+          <input type="text" name="group_name" placeholder="실험군 / 대조군">
+        </div>
+        <div class="form-group">
+          <label>성별</label>
+          <select name="gender" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="">선택</option>
+            <option value="남">남</option>
+            <option value="여">여</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>나이</label>
+          <input type="number" name="age" placeholder="25" min="1" max="120">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('add-participant-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">추가</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 측정 데이터 추가 모달 -->
+<div class="modal-overlay" id="add-measurement-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>측정 데이터 입력</h3>
+    <form action="{{ url_for('portal_project_add_measurement', project_id=project.id) }}" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>참여자 *</label>
+          <select name="participant_id" required style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="">선택</option>
+            {% for p in participants %}
+            <option value="{{ p.id }}">{{ p.code }}{% if p.group_name %} ({{ p.group_name }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>회차/시점</label>
+          <input type="text" name="phase" placeholder="사전 / 사후 / 1회차">
+        </div>
+      </div>
+      {% if variables %}
+      <div style="background:var(--bg);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
+        <p style="font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">측정값</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          {% for v in variables %}
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:.8rem;">{{ v.label or v.name }}{% if v.unit %} ({{ v.unit }}){% endif %}</label>
+            <input type="{% if v.var_type == 'number' %}number" step="any{% else %}text{% endif %}" name="var_{{ v.name }}" placeholder="—">
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="form-group">
+        <label>데이터 (JSON)</label>
+        <textarea name="data_json" placeholder='{"stress_score": 45, "ptsd_score": 23}' style="min-height:80px;font-family:monospace;font-size:.82rem;"></textarea>
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label>메모</label>
+        <textarea name="notes" placeholder="특이사항 등…" style="min-height:60px;"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('add-measurement-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 변수 추가 모달 -->
+<div class="modal-overlay" id="add-variable-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>변수 추가</h3>
+    <form action="{{ url_for('portal_project_add_variable', project_id=project.id) }}" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>변수명 * <span style="font-size:.75rem;color:var(--muted);">(영문, 밑줄만)</span></label>
+          <input type="text" name="name" placeholder="stress_score" pattern="[a-zA-Z0-9_]+" required>
+        </div>
+        <div class="form-group">
+          <label>표시 이름</label>
+          <input type="text" name="label" placeholder="스트레스 점수">
+        </div>
+        <div class="form-group">
+          <label>유형</label>
+          <select name="var_type" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="number">숫자 (number)</option>
+            <option value="text">텍스트 (text)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>단위</label>
+          <input type="text" name="unit" placeholder="점 / ms / Hz">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('add-variable-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">추가</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const MEASUREMENTS = {{ measurements | tojson }};
+const VARIABLES    = {{ variables | tojson }};
+let chartInst = null;
+
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+}
+
+function updateChart() {
+  const varName  = document.getElementById('viz-var')?.value;
+  const chartType= document.getElementById('viz-type')?.value || 'bar';
+  const groupBy  = document.getElementById('viz-group')?.value || 'phase';
+  if (!varName || !MEASUREMENTS.length) return;
+
+  const labels = [];
+  const values = [];
+  const grouped = {};
+
+  MEASUREMENTS.forEach(m => {
+    const val = m.data && m.data[varName];
+    if (val === undefined || val === null) return;
+    const key = groupBy === 'phase' ? (m.phase || '미지정') : (m.participant_code || m.participant_id?.slice(0,6));
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(parseFloat(val));
+  });
+
+  Object.entries(grouped).forEach(([k, vals]) => {
+    labels.push(k);
+    values.push(parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2)));
+  });
+
+  const ctx = document.getElementById('viz-chart');
+  if (!ctx) return;
+  if (chartInst) chartInst.destroy();
+
+  chartInst = new Chart(ctx, {
+    type: chartType,
+    data: {
+      labels,
+      datasets: [{
+        label: VARIABLES.find(v=>v.name===varName)?.label || varName,
+        data: values,
+        backgroundColor: 'rgba(15,107,107,0.2)',
+        borderColor: '#0F6B6B',
+        borderWidth: 2,
+        tension: 0.3,
+        fill: chartType === 'line',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: { y: { beginAtZero: false } }
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
+  });
+  if (MEASUREMENTS.length && VARIABLES.length) updateChart();
+});
+</script>
+{% endblock %}

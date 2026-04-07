@@ -1,108 +1,90 @@
 {% extends "base.html" %}
-{% block title %}세션 기록 · 연구자 포털{% endblock %}
+{% block title %}전체 세션 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:24px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+.data-table th{padding:10px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.data-table td{padding:10px 16px;border-top:1px solid var(--border-light);}
+.filter-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+.filter-bar select,.filter-bar input{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--surface);font-size:.83rem;color:var(--text);outline:none;}
+</style>
+{% endblock %}
 
 {% block content %}
-<div style="background:var(--dark);padding:32px 0 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-  <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:6px;">Researcher Portal</span>
-      <h1 style="color:#fff;font-size:1.8rem;margin:0;">세션 기록</h1>
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <a href="{{ url_for('portal') }}" style="color:rgba(255,255,255,.4);font-size:.8rem;text-decoration:none;">← 프로젝트 목록</a>
+        <h1 style="color:#fff;font-size:1.5rem;margin:6px 0 0;">전체 세션</h1>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
     </div>
-    <div style="display:flex;gap:12px;align-items:center;">
-      <a href="{{ url_for('portal_export') }}" class="btn btn-outline" style="font-size:.8rem;padding:8px 16px;color:#fff;border-color:rgba(255,255,255,.3);">CSV 내보내기 ↓</a>
-      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:8px 16px;">로그아웃</a>
+  </div>
+
+  <div style="background:var(--surface);border-bottom:1px solid var(--border);">
+    <div class="container" style="display:flex;gap:2px;padding-left:28px;padding-right:28px;">
+      <a href="{{ url_for('portal') }}" class="pnav-btn">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn active">전체 세션</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+    <div class="filter-bar">
+      <input type="text" id="filter-search" placeholder="참여자 코드 검색…" oninput="filterTable()">
+      <span style="font-size:.82rem;color:var(--muted);" id="filter-count">총 {{ sessions|length }}건</span>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+      {% if sessions %}
+      <table class="data-table" id="sessions-table">
+        <thead><tr>
+          <th>참여자</th><th>앱</th><th>날짜</th><th>메모</th><th>데이터</th>
+        </tr></thead>
+        <tbody>
+        {% for s in sessions %}
+        <tr data-code="{{ s.participants.code if s.participants else '' }}">
+          <td style="font-weight:700;color:var(--accent);">
+            {% if s.participants %}{{ s.participants.code }}{% else %}—{% endif %}
+          </td>
+          <td>{% if s.participants and s.participants.app_type %}
+            <span style="font-size:.75rem;background:var(--accent-light);color:var(--accent);padding:2px 8px;border-radius:100px;">{{ s.participants.app_type }}</span>
+          {% else %}—{% endif %}</td>
+          <td style="color:var(--muted);">{{ s.get('created_at','')[:10] }}</td>
+          <td style="color:var(--muted);">{{ (s.get('notes') or '—')[:50] }}</td>
+          <td style="font-family:monospace;font-size:.75rem;color:var(--muted);">
+            {% if s.get('data') %}JSON{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:48px;text-align:center;color:var(--muted);">세션 기록이 없어요.</div>
+      {% endif %}
     </div>
   </div>
 </div>
+{% endblock %}
 
-<section style="background:var(--surface2);">
-  <div class="container">
-
-    <!-- Nav -->
-    <div style="display:flex;gap:4px;margin-bottom:36px;border-bottom:1px solid var(--border);padding-bottom:0;">
-      <a href="{{ url_for('portal') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">대시보드</a>
-      <a href="{{ url_for('portal_participants') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">참여자 관리</a>
-      <a href="{{ url_for('portal_sessions') }}" style="font-size:.85rem;font-weight:600;padding:10px 18px;border-radius:8px 8px 0 0;background:var(--accent);color:#fff;">세션 기록</a>
-      <a href="{{ url_for('portal_export') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--accent);">CSV 내보내기 ↓</a>
-    </div>
-
-    {% with messages = get_flashed_messages() %}
-    {% if messages %}
-    <div style="background:var(--accent-light);border:1px solid var(--accent);border-radius:var(--radius);padding:12px 18px;margin-bottom:20px;color:var(--accent);font-size:.9rem;font-weight:600;">
-      {{ messages[0] }}
-    </div>
-    {% endif %}
-    {% endwith %}
-
-    <div style="display:grid;grid-template-columns:1fr 360px;gap:32px;align-items:start;">
-
-      <!-- 세션 목록 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
-        <div style="padding:20px 24px;border-bottom:1px solid var(--border);">
-          <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;">전체 세션 기록 ({{ sessions|length }}건)</h3>
-        </div>
-        {% if sessions %}
-        <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
-          <thead>
-            <tr style="background:var(--bg);">
-              <th style="padding:12px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">참여자</th>
-              <th style="padding:12px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">앱</th>
-              <th style="padding:12px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">날짜</th>
-              <th style="padding:12px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">메모</th>
-              <th style="padding:12px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;">데이터</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for s in sessions %}
-            <tr style="border-top:1px solid var(--border-light);">
-              <td style="padding:10px 16px;font-weight:700;color:var(--accent);">
-                {% if s.get('participants') %}{{ s.participants.get('code','—') }}{% else %}—{% endif %}
-              </td>
-              <td style="padding:10px 16px;">
-                {% if s.get('participants') %}
-                <span style="background:var(--accent-light);color:var(--accent);font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:100px;">{{ s.participants.get('app_type','—') }}</span>
-                {% endif %}
-              </td>
-              <td style="padding:10px 16px;color:var(--muted);">{{ s.get('created_at','')[:10] }}</td>
-              <td style="padding:10px 16px;color:var(--muted);max-width:180px;">{{ s.get('notes','—')[:50] }}</td>
-              <td style="padding:10px 16px;">
-                {% if s.get('data') %}
-                <span style="font-size:.72rem;font-family:monospace;background:var(--surface2);padding:2px 8px;border-radius:4px;color:var(--muted);">JSON</span>
-                {% else %}—{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div style="padding:48px;text-align:center;color:var(--muted);">아직 세션 기록이 없어요.</div>
-        {% endif %}
-      </div>
-
-      <!-- 세션 추가 폼 -->
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;">
-        <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;margin-bottom:20px;">세션 수동 추가</h3>
-        <form action="{{ url_for('portal_add_session') }}" method="POST">
-          <div class="form-group">
-            <label>참여자 ID (UUID)</label>
-            <input type="text" name="participant_id" placeholder="참여자 UUID 붙여넣기" required>
-          </div>
-          <div class="form-group">
-            <label>메모</label>
-            <textarea name="notes" placeholder="세션 메모 입력…" style="min-height:80px;"></textarea>
-          </div>
-          <div class="form-group">
-            <label>데이터 <span style="color:var(--muted);font-weight:400;">(JSON 형식, 선택)</span></label>
-            <textarea name="data" placeholder='{"score": 85, "duration": 1200}'style="min-height:80px;font-family:monospace;font-size:.82rem;"></textarea>
-          </div>
-          <button type="submit" class="btn btn-primary" style="width:100%;">추가하기</button>
-        </form>
-        <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:8px;">
-          <p style="font-size:.78rem;color:var(--muted);line-height:1.6;">앱에서 자동으로 데이터가 전송되면 여기에 자동으로 쌓여요. 수동 추가는 보조용이에요.</p>
-        </div>
-      </div>
-
-    </div>
-  </div>
-</section>
+{% block scripts %}
+<script>
+function filterTable() {
+  const q   = document.getElementById('filter-search').value.toLowerCase();
+  const rows = document.querySelectorAll('#sessions-table tbody tr');
+  let visible = 0;
+  rows.forEach(r => {
+    const show = !q || r.dataset.code.toLowerCase().includes(q);
+    r.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  document.getElementById('filter-count').textContent = `총 ${visible}건`;
+}
+</script>
 {% endblock %}

@@ -1,80 +1,121 @@
 {% extends "base.html" %}
 {% block title %}연구자 포털 · Trauma Stress Lab{% endblock %}
 
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:28px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.portal-header-inner{display:flex;justify-content:space-between;align-items:center;}
+.portal-nav{background:var(--surface);border-bottom:1px solid var(--border);}
+.portal-nav-inner{display:flex;align-items:center;gap:2px;padding:0 28px;}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;margin-top:28px;}
+.project-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;cursor:pointer;transition:all .2s;text-decoration:none;display:block;}
+.project-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08);transform:translateY(-2px);border-color:var(--accent);}
+.project-card-new{border:1.5px dashed var(--border);background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:160px;gap:10px;color:var(--muted);}
+.project-card-new:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-light);}
+.project-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:12px;}
+.project-name{font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;color:var(--dark);margin-bottom:4px;}
+.project-desc{font-size:.8rem;color:var(--muted);margin-bottom:12px;line-height:1.5;}
+.project-meta{display:flex;gap:12px;font-size:.75rem;color:var(--muted);}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border-radius:var(--radius-lg);padding:32px;width:100%;max-width:480px;margin:20px;}
+.modal-box h3{font-family:'Nunito',sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:20px;}
+</style>
+{% endblock %}
+
 {% block content %}
-<div style="background:var(--dark);padding:32px 0 24px;border-bottom:1px solid rgba(255,255,255,.08);">
-  <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
-    <div>
-      <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:6px;">Researcher Portal</span>
-      <h1 style="color:#fff;font-size:1.8rem;margin:0;">대시보드</h1>
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container portal-header-inner">
+      <div>
+        <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:4px;">Researcher Portal</span>
+        <h1 style="color:#fff;font-size:1.6rem;margin:0;">내 프로젝트</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="color:rgba(255,255,255,.45);font-size:.83rem;">{{ researcher }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+      </div>
     </div>
-    <div style="display:flex;align-items:center;gap:16px;">
-      <span style="color:rgba(255,255,255,.5);font-size:.85rem;">{{ researcher }}</span>
-      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:8px 16px;">로그아웃</a>
+  </div>
+
+  <div class="portal-nav">
+    <div class="container portal-nav-inner">
+      <a href="{{ url_for('portal') }}" class="pnav-btn active">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn">전체 세션</a>
+      <a href="{{ url_for('portal_merge') }}" class="pnav-btn">프로젝트 병합</a>
+      <a href="{{ url_for('portal_settings') }}" class="pnav-btn">설정</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:8px;padding-bottom:60px;">
+    <div style="display:flex;gap:24px;padding:20px 0;border-bottom:1px solid var(--border-light);margin-bottom:4px;">
+      <div style="font-size:.85rem;color:var(--muted);">프로젝트 <strong style="color:var(--dark);">{{ projects|length }}</strong>개</div>
+      <div style="font-size:.85rem;color:var(--muted);">총 참여자 <strong style="color:var(--dark);">{{ total_participants }}</strong>명</div>
+      <div style="font-size:.85rem;color:var(--muted);">총 측정 <strong style="color:var(--dark);">{{ total_measurements }}</strong>건</div>
+    </div>
+
+    <div class="project-grid">
+      <div class="project-card project-card-new" onclick="document.getElementById('new-project-modal').classList.add('open')">
+        <div style="width:40px;height:40px;border-radius:50%;border:2px dashed currentColor;display:flex;align-items:center;justify-content:center;font-size:1.4rem;">+</div>
+        <span style="font-size:.88rem;font-weight:600;">새 프로젝트</span>
+      </div>
+
+      {% set proj_colors = ['#0F6B6B','#1a237e','#4a148c','#1b5e20','#e65100','#880e4f','#006064'] %}
+      {% for p in projects %}
+      {% set color = proj_colors[loop.index0 % proj_colors|length] %}
+      <a href="{{ url_for('portal_project', project_id=p.id) }}" class="project-card">
+        <div class="project-icon" style="background:{{ color }}22;">
+          <span style="font-size:1.3rem;">🗂</span>
+        </div>
+        <div class="project-name">{{ p.name }}</div>
+        <div class="project-desc">{{ (p.description or '설명 없음')[:60] }}{% if p.description and p.description|length > 60 %}…{% endif %}</div>
+        <div class="project-meta">
+          <span>👥 {{ p.participant_count }}명</span>
+          <span>📊 {{ p.measurement_count }}건</span>
+          <span>📅 {{ p.created_at[:10] }}</span>
+        </div>
+      </a>
+      {% endfor %}
     </div>
   </div>
 </div>
 
-<section style="background:var(--surface2);">
-  <div class="container">
-
-    <!-- Nav -->
-    <div style="display:flex;gap:4px;margin-bottom:36px;border-bottom:1px solid var(--border);padding-bottom:0;">
-      <a href="{{ url_for('portal') }}" style="font-size:.85rem;font-weight:600;padding:10px 18px;border-radius:8px 8px 0 0;background:var(--accent);color:#fff;">대시보드</a>
-      <a href="{{ url_for('portal_participants') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">참여자 관리</a>
-      <a href="{{ url_for('portal_sessions') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--muted);">세션 기록</a>
-      <a href="{{ url_for('portal_export') }}" style="font-size:.85rem;font-weight:500;padding:10px 18px;border-radius:8px 8px 0 0;color:var(--accent);">CSV 내보내기 ↓</a>
-    </div>
-
-    <!-- Stats -->
-    <div class="grid-3" style="margin-bottom:40px;">
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;">
-        <div style="font-family:'Nunito',sans-serif;font-size:2.8rem;font-weight:800;color:var(--accent);line-height:1;">{{ stats.participants }}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:6px;font-weight:600;">등록 참여자</div>
+<div class="modal-overlay" id="new-project-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>새 프로젝트 만들기</h3>
+    <form action="{{ url_for('portal_project_new') }}" method="POST">
+      <div class="form-group">
+        <label>프로젝트 이름 *</label>
+        <input type="text" name="name" placeholder="예: PLS 효과성 연구 2026" required>
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;">
-        <div style="font-family:'Nunito',sans-serif;font-size:2.8rem;font-weight:800;color:var(--accent);line-height:1;">{{ stats.sessions }}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:6px;font-weight:600;">총 세션 수</div>
+      <div class="form-group">
+        <label>설명</label>
+        <textarea name="description" placeholder="연구 목적, 대상 등 간략히 입력…" style="min-height:80px;"></textarea>
       </div>
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px;text-align:center;">
-        <div style="font-family:'Nunito',sans-serif;font-size:2.8rem;font-weight:800;color:var(--accent);line-height:1;">{{ stats.apps }}</div>
-        <div style="font-size:.82rem;color:var(--muted);margin-top:6px;font-weight:600;">사용 앱 종류</div>
+      <div class="form-group">
+        <label>관련 앱</label>
+        <select name="app_type" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-family:'Nunito Sans',sans-serif;font-size:.9rem;color:var(--text);outline:none;">
+          <option value="">선택 안 함</option>
+          <option value="Mobile PLS">Mobile PLS</option>
+          <option value="Mobile TLS">Mobile TLS</option>
+          <option value="Mind Therapy">Mind Therapy</option>
+          <option value="NeuroBreezy">NeuroBreezy</option>
+          <option value="기타">기타</option>
+        </select>
       </div>
-    </div>
-
-    <!-- Recent sessions -->
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
-      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
-        <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;">최근 세션</h3>
-        <a href="{{ url_for('portal_sessions') }}" style="font-size:.82rem;color:var(--accent);font-weight:600;">전체 보기 →</a>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('new-project-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">만들기</button>
       </div>
-      {% if recent_sessions %}
-      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
-        <thead>
-          <tr style="background:var(--bg);">
-            <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">참여자 ID</th>
-            <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">날짜</th>
-            <th style="padding:12px 20px;text-align:left;font-weight:600;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;">메모</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in recent_sessions %}
-          <tr style="border-top:1px solid var(--border-light);">
-            <td style="padding:12px 20px;font-weight:500;">{{ s.get('participant_id','—')[:8] }}…</td>
-            <td style="padding:12px 20px;color:var(--muted);">{{ s.get('created_at','')[:10] }}</td>
-            <td style="padding:12px 20px;color:var(--muted);">{{ s.get('notes','—')[:60] }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div style="padding:48px;text-align:center;color:var(--muted);">
-        <p style="margin-bottom:16px;">아직 세션 기록이 없어요.</p>
-        <a href="{{ url_for('portal_sessions') }}" class="btn btn-outline" style="font-size:.85rem;">세션 추가하기</a>
-      </div>
-      {% endif %}
-    </div>
-
+    </form>
   </div>
-</section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.remove('open'));});</script>
 {% endblock %}

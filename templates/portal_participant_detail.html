@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}{{ participant.code }} · 참여자 상세{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:24px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.data-table{width:100%;border-collapse:collapse;font-size:.85rem;}
+.data-table th{padding:10px 16px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.data-table td{padding:10px 16px;border-top:1px solid var(--border-light);}
+.change-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;text-align:center;}
+.change-diff-pos{color:#0a8a4a;font-weight:700;}
+.change-diff-neg{color:#c0392b;font-weight:700;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <a href="{{ url_for('portal_project', project_id=project.id) }}" style="color:rgba(255,255,255,.4);font-size:.8rem;text-decoration:none;">← {{ project.name }}</a>
+        <h1 style="color:#fff;font-size:1.5rem;margin:6px 0 2px;">참여자 {{ participant.code }}</h1>
+        <span style="color:rgba(255,255,255,.4);font-size:.82rem;">
+          {% if participant.gender %}{{ participant.gender }} · {% endif %}
+          {% if participant.age %}{{ participant.age }}세 · {% endif %}
+          {% if participant.group_name %}{{ participant.group_name }}{% endif %}
+        </span>
+      </div>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+
+    <!-- 사전-사후 변화량 -->
+    {% if changes %}
+    <div style="margin-bottom:28px;">
+      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">사전-사후 변화량</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+        {% for vname, c in changes.items() %}
+        <div class="change-card">
+          <div style="font-size:.78rem;color:var(--muted);margin-bottom:6px;">{{ c.label }}</div>
+          <div style="font-size:1.4rem;font-weight:700;{% if c.diff > 0 %}color:#0a8a4a{% elif c.diff < 0 %}color:#c0392b{% endif %};">
+            {% if c.diff > 0 %}+{% endif %}{{ c.diff }}{% if c.unit %} {{ c.unit }}{% endif %}
+          </div>
+          <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">{{ c.pre }} → {{ c.post }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 전체 측정 이력 -->
+    <div style="margin-bottom:20px;">
+      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">전체 측정 이력</h3>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+        {% if measurements %}
+        <table class="data-table">
+          <thead><tr>
+            <th>회차</th><th>측정일</th>
+            {% for v in variables %}<th>{{ v.label or v.name }}</th>{% endfor %}
+            <th>메모</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for m in measurements %}
+          <tr>
+            <td><span style="font-size:.75rem;background:var(--accent-light);color:var(--accent);padding:2px 8px;border-radius:100px;">{{ m.phase or '—' }}</span></td>
+            <td style="color:var(--muted);">{{ m.measured_at[:10] }}</td>
+            {% for v in variables %}
+            <td style="font-weight:{% if m.data and m.data.get(v.name) %}600{% else %}400{% endif %};">
+              {{ m.data.get(v.name, '—') if m.data else '—' }}
+            </td>
+            {% endfor %}
+            <td style="color:var(--muted);font-size:.82rem;">{{ (m.notes or '—')[:40] }}</td>
+            <td>
+              <form action="{{ url_for('portal_project_delete_measurement', project_id=project.id, measurement_id=m.id) }}" method="POST" onsubmit="return confirm('삭제하시겠어요?')">
+                <button type="submit" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.78rem;padding:2px 6px;border-radius:4px;" onmouseover="this.style.color='#c0392b'" onmouseout="this.style.color='var(--muted)'">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div style="padding:40px;text-align:center;color:var(--muted);">측정 데이터가 없어요.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 시각화 -->
+    {% if measurements|length > 1 and variables %}
+    <div>
+      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">변화 추이</h3>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;">
+        <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center;">
+          <select id="detail-var" onchange="drawChart()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.83rem;">
+            {% for v in variables %}<option value="{{ v.name }}">{{ v.label or v.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <canvas id="detail-chart" style="max-height:300px;"></canvas>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 참여자 삭제 -->
+    <div style="margin-top:40px;padding-top:24px;border-top:1px solid var(--border);">
+      <form action="{{ url_for('portal_project_delete_participant', project_id=project.id, participant_id=participant.id) }}" method="POST" onsubmit="return confirm('참여자와 모든 측정 데이터가 삭제됩니다. 계속할까요?')">
+        <button type="submit" style="font-size:.82rem;color:#c0392b;background:none;border:1px solid #c0392b;padding:7px 14px;border-radius:8px;cursor:pointer;">참여자 삭제</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const MDATA = {{ measurements | tojson }};
+const VARS  = {{ variables | tojson }};
+let chartInst = null;
+
+function drawChart() {
+  const vn  = document.getElementById('detail-var')?.value;
+  if (!vn) return;
+  const labels = [], values = [];
+  MDATA.forEach(m => {
+    const val = m.data && m.data[vn];
+    if (val !== undefined && val !== null) {
+      labels.push(m.phase || m.measured_at?.slice(0,10) || '');
+      values.push(parseFloat(val));
+    }
+  });
+  const ctx = document.getElementById('detail-chart');
+  if (!ctx) return;
+  if (chartInst) chartInst.destroy();
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: VARS.find(v=>v.name===vn)?.label || vn,
+        data: values,
+        borderColor: '#0F6B6B',
+        backgroundColor: 'rgba(15,107,107,0.08)',
+        borderWidth: 2.5,
+        pointRadius: 5,
+        pointBackgroundColor: '#0F6B6B',
+        tension: 0.3,
+        fill: true,
+      }]
+    },
+    options: { responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:false}} }
+  });
+}
+document.addEventListener('DOMContentLoaded', drawChart);
+</script>
+{% endblock %}
