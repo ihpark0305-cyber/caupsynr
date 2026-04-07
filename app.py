@@ -657,9 +657,11 @@ def portal_project(project_id):
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}&order=enrolled_at.desc") or []
     measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.desc") or []
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
-    p_map = {p["id"]: p["code"] for p in (participants if isinstance(participants,list) else [])}
+    p_map = {p["id"]: {"code": p["code"], "group_name": p.get("group_name") or ""} for p in (participants if isinstance(participants,list) else [])}
     for m in (measurements_raw if isinstance(measurements_raw,list) else []):
-        m["participant_code"] = p_map.get(m.get("participant_id",""),"")
+        info = p_map.get(m.get("participant_id",""), {})
+        m["participant_code"] = info.get("code", "")
+        m["group_name"] = info.get("group_name", "")
     for p in (participants if isinstance(participants,list) else []):
         p["mcount"] = sum(1 for m in (measurements_raw if isinstance(measurements_raw,list) else []) if m.get("participant_id")==p["id"])
     return render_template("portal_project.html",
