@@ -111,11 +111,12 @@ def init_db():
             conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", "tsl2025!"))
             conn.commit()
     # Migrate: add excluded column if missing
-    try:
-        conn.execute("ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0")
-        conn.commit()
-    except Exception:
-        pass  # column already exists
+    with sqlite3.connect(DB_PATH) as conn:
+        try:
+            conn.execute("ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
 
 def _parse_sb_params(params):
     filters, order_by, select_fields = {}, None, "*"

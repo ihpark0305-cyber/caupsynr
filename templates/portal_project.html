@@ -55,6 +55,7 @@
       <a href="#" class="tab-btn" onclick="showTab('visualize',this);return false;">시각화</a>
       <a href="#" class="tab-btn" onclick="showTab('variables',this);return false;">변수 설정</a>
       <a href="{{ url_for('portal_project_stats', project_id=project.id) }}" class="tab-btn" style="text-decoration:none;">기술통계</a>
+      <a href="{{ url_for('portal_project_tests', project_id=project.id) }}" class="tab-btn" style="text-decoration:none;">통계 검정</a>
     </div>
   </div>
 
@@ -127,18 +128,26 @@
         {% if measurements %}
         <table class="data-table">
           <thead><tr>
-            <th>참여자</th><th>회차</th><th>측정일</th><th>데이터</th><th>메모</th>
+            <th>참여자</th><th>그룹</th><th>회차</th><th>측정일</th><th>데이터</th><th>메모</th><th>제외</th>
           </tr></thead>
           <tbody>
           {% for m in measurements %}
-          <tr>
+          <tr style="{% if m.excluded %}opacity:.45;{% endif %}">
             <td style="font-weight:700;color:var(--accent);">{{ m.participant_code or m.participant_id[:8] }}</td>
+            <td style="color:var(--muted);font-size:.8rem;">{{ m.group_name or '—' }}</td>
             <td><span class="phase-badge">{{ m.phase or '—' }}</span></td>
             <td style="color:var(--muted);">{{ m.measured_at[:10] }}</td>
-            <td style="font-family:monospace;font-size:.78rem;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            <td style="font-family:monospace;font-size:.78rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
               {{ m.data | tojson if m.data else '—' }}
             </td>
-            <td style="color:var(--muted);">{{ (m.notes or '—')[:40] }}</td>
+            <td style="color:var(--muted);">{{ (m.notes or '—')[:30] }}</td>
+            <td>
+              <form action="{{ url_for('portal_measurement_toggle_exclude', project_id=project.id, m_id=m.id) }}" method="POST">
+                <button type="submit" title="{{ '포함' if m.excluded else '제외' }}" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid {% if m.excluded %}var(--accent){% else %}#e74c3c{% endif %};color:{% if m.excluded %}var(--accent){% else %}#e74c3c{% endif %};border-radius:8px;cursor:pointer;">
+                  {{ '↩ 포함' if m.excluded else '✕ 제외' }}
+                </button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
           </tbody>
@@ -242,7 +251,7 @@
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
         {% if variables %}
         <table class="data-table">
-          <thead><tr><th>변수명</th><th>표시 이름</th><th>유형</th><th>단위</th></tr></thead>
+          <thead><tr><th>변수명</th><th>표시 이름</th><th>유형</th><th>단위</th><th></th></tr></thead>
           <tbody>
           {% for v in variables %}
           <tr>
@@ -250,6 +259,12 @@
             <td>{{ v.label or '—' }}</td>
             <td><span style="font-size:.75rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ v.var_type }}</span></td>
             <td style="color:var(--muted);">{{ v.unit or '—' }}</td>
+            <td style="white-space:nowrap;">
+              <button onclick="openEditVar('{{ v.id }}','{{ v.name }}','{{ v.label or '' }}','{{ v.var_type }}','{{ v.unit or '' }}')" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;cursor:pointer;margin-right:4px;">편집</button>
+              <form style="display:inline;" action="{{ url_for('portal_variable_delete', project_id=project.id, var_id=v.id) }}" method="POST" onsubmit="return confirm('변수 {{ v.name }}을 삭제할까요?')">
+                <button type="submit" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:8px;cursor:pointer;">삭제</button>
+              </form>
+            </td>
           </tr>
           {% endfor %}
           </tbody>
@@ -345,6 +360,37 @@
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button type="button" class="btn btn-outline" onclick="document.getElementById('add-measurement-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 변수 편집 모달 -->
+<div class="modal-overlay" id="edit-variable-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>변수 편집</h3>
+    <form id="edit-variable-form" method="POST">
+      <p id="edit-var-name" style="font-family:monospace;font-size:.85rem;color:var(--accent);margin-bottom:16px;"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>표시 이름</label>
+          <input type="text" name="label" id="edit-var-label" placeholder="스트레스 점수">
+        </div>
+        <div class="form-group">
+          <label>단위</label>
+          <input type="text" name="unit" id="edit-var-unit" placeholder="점 / ms / Hz">
+        </div>
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>유형</label>
+          <select name="var_type" id="edit-var-type" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="number">숫자 (number)</option>
+            <option value="text">텍스트 (text)</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('edit-variable-modal').classList.remove('open')">취소</button>
         <button type="submit" class="btn btn-primary">저장</button>
       </div>
     </form>
@@ -574,6 +620,16 @@ function updateRadar() {
       scales: { r: { beginAtZero: false } }
     }
   });
+}
+
+function openEditVar(id, name, label, varType, unit) {
+  document.getElementById('edit-var-name').textContent = name;
+  document.getElementById('edit-var-label').value = label;
+  document.getElementById('edit-var-unit').value = unit;
+  document.getElementById('edit-var-type').value = varType;
+  document.getElementById('edit-variable-form').action =
+    `/portal/projects/{{ project.id }}/variables/${id}/edit`;
+  document.getElementById('edit-variable-modal').classList.add('open');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
