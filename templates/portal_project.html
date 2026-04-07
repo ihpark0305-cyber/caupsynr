@@ -152,7 +152,10 @@
     <!-- ── 시각화 탭 ── -->
     <div id="tab-visualize" class="tab-content">
       {% if measurements and variables %}
+
+      <!-- Chart 1: Variable trend -->
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:16px;">변수 추이</h4>
         <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;">
           <div class="form-group" style="margin:0;min-width:160px;">
             <label style="font-size:.78rem;">변수 선택</label>
@@ -179,6 +182,47 @@
         </div>
         <canvas id="viz-chart" style="max-height:380px;"></canvas>
       </div>
+
+      <!-- Chart 2: Pre/Post comparison by group -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:16px;">사전/사후 그룹 비교</h4>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;">
+          <div class="form-group" style="margin:0;min-width:160px;">
+            <label style="font-size:.78rem;">변수 선택</label>
+            <select id="cmp-var" onchange="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+              {% for v in variables %}
+              <option value="{{ v.name }}">{{ v.label or v.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">사전 회차</label>
+            <input id="cmp-pre" type="text" value="사전" oninput="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">사후 회차</label>
+            <input id="cmp-post" type="text" value="사후" oninput="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+          </div>
+        </div>
+        <canvas id="cmp-chart" style="max-height:380px;"></canvas>
+        <p id="cmp-no-data" style="text-align:center;color:var(--muted);font-size:.85rem;display:none;padding:24px 0;">해당 회차의 데이터가 없어요. 사전/사후 회차명을 확인해주세요.</p>
+      </div>
+
+      <!-- Chart 3: All variables at a glance (radar) -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:16px;">전체 변수 레이더</h4>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-end;">
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">회차</label>
+            <select id="radar-phase" onchange="updateRadar()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;"></select>
+          </div>
+        </div>
+        <div style="max-width:480px;margin:0 auto;">
+          <canvas id="radar-chart"></canvas>
+        </div>
+        <p id="radar-no-data" style="text-align:center;color:var(--muted);font-size:.85rem;display:none;padding:24px 0;">선택된 회차에 데이터가 없어요.</p>
+      </div>
+
       {% else %}
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:56px;text-align:center;color:var(--muted);">
         <p style="margin-bottom:12px;">시각화를 사용하려면 변수 설정과 측정 데이터가 필요해요.</p>
@@ -356,16 +400,20 @@ function showTab(name, btn) {
   if (btn) btn.classList.add('active');
 }
 
+const COLORS = ['#0F6B6B','#e67e22','#8e44ad','#2980b9','#27ae60','#c0392b'];
+
+function avg(arr) {
+  if (!arr.length) return null;
+  return parseFloat((arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2));
+}
+
 function updateChart() {
   const varName  = document.getElementById('viz-var')?.value;
   const chartType= document.getElementById('viz-type')?.value || 'bar';
   const groupBy  = document.getElementById('viz-group')?.value || 'phase';
   if (!varName || !MEASUREMENTS.length) return;
 
-  const labels = [];
-  const values = [];
   const grouped = {};
-
   MEASUREMENTS.forEach(m => {
     const val = m.data && m.data[varName];
     if (val === undefined || val === null) return;
@@ -374,10 +422,8 @@ function updateChart() {
     grouped[key].push(parseFloat(val));
   });
 
-  Object.entries(grouped).forEach(([k, vals]) => {
-    labels.push(k);
-    values.push(parseFloat((vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(2)));
-  });
+  const labels = Object.keys(grouped);
+  const values = labels.map(k => avg(grouped[k]));
 
   const ctx = document.getElementById('viz-chart');
   if (!ctx) return;
@@ -405,11 +451,141 @@ function updateChart() {
   });
 }
 
+let cmpInst = null;
+function updateCompareChart() {
+  const varName = document.getElementById('cmp-var')?.value;
+  const preLabel = document.getElementById('cmp-pre')?.value.trim() || '사전';
+  const postLabel = document.getElementById('cmp-post')?.value.trim() || '사후';
+  if (!varName) return;
+
+  // Group by group_name → pre/post values
+  const groups = {};
+  MEASUREMENTS.forEach(m => {
+    const val = m.data && m.data[varName];
+    if (val === undefined || val === null) return;
+    const phase = m.phase || '';
+    if (phase !== preLabel && phase !== postLabel) return;
+    const grp = m.group_name || '전체';
+    if (!groups[grp]) groups[grp] = { pre: [], post: [] };
+    if (phase === preLabel) groups[grp].pre.push(parseFloat(val));
+    else groups[grp].post.push(parseFloat(val));
+  });
+
+  const groupNames = Object.keys(groups);
+  const noDataEl = document.getElementById('cmp-no-data');
+  const ctx = document.getElementById('cmp-chart');
+
+  if (!groupNames.length) {
+    noDataEl.style.display = 'block';
+    ctx.style.display = 'none';
+    if (cmpInst) { cmpInst.destroy(); cmpInst = null; }
+    return;
+  }
+  noDataEl.style.display = 'none';
+  ctx.style.display = 'block';
+
+  if (cmpInst) cmpInst.destroy();
+  cmpInst = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: groupNames,
+      datasets: [
+        {
+          label: preLabel,
+          data: groupNames.map(g => avg(groups[g].pre)),
+          backgroundColor: 'rgba(15,107,107,0.6)',
+          borderColor: '#0F6B6B',
+          borderWidth: 2,
+        },
+        {
+          label: postLabel,
+          data: groupNames.map(g => avg(groups[g].post)),
+          backgroundColor: 'rgba(230,126,34,0.6)',
+          borderColor: '#e67e22',
+          borderWidth: 2,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true }, tooltip: {
+        callbacks: {
+          afterLabel: ctx => {
+            const grp = groupNames[ctx.dataIndex];
+            const isPre = ctx.datasetIndex === 0;
+            const arr = isPre ? groups[grp].pre : groups[grp].post;
+            return `n = ${arr.length}`;
+          }
+        }
+      }},
+      scales: { y: { beginAtZero: false } }
+    }
+  });
+}
+
+let radarInst = null;
+function populateRadarPhases() {
+  const sel = document.getElementById('radar-phase');
+  if (!sel) return;
+  const phases = [...new Set(MEASUREMENTS.map(m => m.phase || '미지정'))];
+  sel.innerHTML = phases.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function updateRadar() {
+  const phase = document.getElementById('radar-phase')?.value;
+  if (!phase || !VARIABLES.length) return;
+
+  const filtered = MEASUREMENTS.filter(m => (m.phase || '미지정') === phase);
+  const noDataEl = document.getElementById('radar-no-data');
+  const ctx = document.getElementById('radar-chart');
+
+  const labels = VARIABLES.map(v => v.label || v.name);
+  const values = VARIABLES.map(v => {
+    const vals = filtered.map(m => parseFloat(m.data?.[v.name])).filter(n => !isNaN(n));
+    return avg(vals);
+  });
+
+  if (values.every(v => v === null)) {
+    noDataEl.style.display = 'block';
+    ctx.style.display = 'none';
+    if (radarInst) { radarInst.destroy(); radarInst = null; }
+    return;
+  }
+  noDataEl.style.display = 'none';
+  ctx.style.display = 'block';
+
+  if (radarInst) radarInst.destroy();
+  radarInst = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        label: phase,
+        data: values,
+        backgroundColor: 'rgba(15,107,107,0.15)',
+        borderColor: '#0F6B6B',
+        borderWidth: 2,
+        pointBackgroundColor: '#0F6B6B',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true } },
+      scales: { r: { beginAtZero: false } }
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
   });
-  if (MEASUREMENTS.length && VARIABLES.length) updateChart();
+  if (MEASUREMENTS.length && VARIABLES.length) {
+    updateChart();
+    updateCompareChart();
+    populateRadarPhases();
+    updateRadar();
+  }
 });
 </script>
 {% endblock %}

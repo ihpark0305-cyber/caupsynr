@@ -10,15 +10,20 @@
 .pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
 .pnav-btn:hover{color:var(--dark);}
 .pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
-.file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-top:24px;}
-.file-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;transition:box-shadow .2s;}
-.file-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.08);}
+.file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:24px;}
+.file-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;transition:box-shadow .2s,transform .2s;}
+.file-card:hover{box-shadow:0 4px 20px rgba(0,0,0,.1);transform:translateY(-2px);}
 .file-icon{font-size:2.4rem;line-height:1;}
 .file-name{font-size:.82rem;font-weight:600;color:var(--dark);word-break:break-all;line-height:1.3;}
 .file-size{font-size:.72rem;color:var(--muted);}
-.file-actions{display:flex;gap:6px;margin-top:4px;}
-.upload-zone{border:2px dashed var(--border);border-radius:16px;padding:40px;text-align:center;margin-bottom:24px;transition:border-color .2s,background .2s;}
-.upload-zone:hover{border-color:var(--accent);background:var(--accent-light);}
+.file-project-tag{font-size:.68rem;background:var(--accent-light);color:var(--accent);padding:2px 8px;border-radius:100px;font-weight:600;}
+.file-actions{display:flex;gap:6px;margin-top:6px;}
+.upload-zone{border:2px dashed var(--border);border-radius:16px;padding:40px;text-align:center;margin-bottom:24px;transition:border-color .2s,background .2s;cursor:pointer;}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent);background:var(--accent-light);}
+.upload-form-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px;}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+.filter-btn{font-size:.78rem;padding:5px 12px;border-radius:100px;border:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;}
+.filter-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);}
 </style>
 {% endblock %}
 {% block content %}
@@ -45,15 +50,7 @@
     </div>
   </div>
   <div class="container" style="padding-top:32px;padding-bottom:60px;">
-    <!-- Upload zone -->
-    <form action="{{ url_for('portal_files_upload') }}" method="POST" enctype="multipart/form-data">
-      <div class="upload-zone" onclick="document.getElementById('file-input').click()" style="cursor:pointer;">
-        <div style="font-size:2.5rem;margin-bottom:10px;">📂</div>
-        <p style="font-weight:600;color:var(--dark);margin-bottom:6px;">파일 업로드</p>
-        <p style="font-size:.85rem;color:var(--muted);">클릭하여 파일 선택 (모든 형식 지원)</p>
-        <input id="file-input" type="file" name="file" style="display:none;" onchange="this.form.submit()">
-      </div>
-    </form>
+
     <!-- Flash messages -->
     {% with messages = get_flashed_messages() %}
     {% if messages %}
@@ -62,20 +59,63 @@
     </div>
     {% endif %}
     {% endwith %}
-    <!-- Stats -->
-    <div style="display:flex;gap:20px;margin-bottom:8px;">
-      <span style="font-size:.85rem;color:var(--muted);">파일 <strong style="color:var(--dark);">{{ files|length }}</strong>개</span>
-      <span style="font-size:.85rem;color:var(--muted);">총 용량 <strong style="color:var(--dark);">{{ "%.1f"|format(files|sum(attribute='size')/1048576) }} MB</strong></span>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="upload-zone">
+      <div style="font-size:2.5rem;margin-bottom:10px;">📂</div>
+      <p style="font-weight:600;color:var(--dark);margin-bottom:6px;">파일 업로드</p>
+      <p style="font-size:.85rem;color:var(--muted);">클릭하거나 파일을 드래그 앤 드롭</p>
+      <form id="upload-form" action="{{ url_for('portal_files_upload') }}" method="POST" enctype="multipart/form-data">
+        <input id="file-input" type="file" name="file" style="display:none;" multiple onchange="autoSubmitOrShow()">
+        <div class="upload-form-row" id="upload-form-row" style="display:none;justify-content:center;">
+          <div>
+            <label style="font-size:.78rem;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;">프로젝트에 연결 (선택)</label>
+            <select name="project_id" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.85rem;min-width:200px;">
+              <option value="">— 프로젝트 없음 —</option>
+              {% for p in projects %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="font-size:.85rem;align-self:flex-end;">업로드</button>
+          <button type="button" class="btn btn-outline" style="font-size:.85rem;align-self:flex-end;" onclick="resetUpload()">취소</button>
+        </div>
+      </form>
+      <p id="selected-file-name" style="font-size:.82rem;color:var(--accent);font-weight:600;margin-top:8px;display:none;"></p>
     </div>
+
+    <!-- Stats + filter bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+      <div style="display:flex;gap:20px;">
+        <span style="font-size:.85rem;color:var(--muted);">파일 <strong style="color:var(--dark);">{{ files|length }}</strong>개</span>
+        <span style="font-size:.85rem;color:var(--muted);">총 용량 <strong style="color:var(--dark);">{{ "%.1f"|format((files|sum(attribute='size'))/1048576) }} MB</strong></span>
+      </div>
+    </div>
+
+    <!-- Project filter -->
+    {% if projects %}
+    <div class="filter-bar">
+      <span style="font-size:.78rem;color:var(--muted);font-weight:600;">프로젝트:</span>
+      <button class="filter-btn active" onclick="filterProject('all',this)">전체</button>
+      <button class="filter-btn" onclick="filterProject('none',this)">미연결</button>
+      {% for p in projects %}
+      <button class="filter-btn" onclick="filterProject('{{ p.id }}',this)">{{ p.name }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+
     {% if files %}
-    <div class="file-grid">
+    <div class="file-grid" id="file-grid">
       {% for f in files %}
       {% set ext = f.original_name.rsplit('.',1)[-1].lower() if '.' in f.original_name else '' %}
-      {% set icon = '📊' if ext in ['csv','xlsx','xls'] else ('📄' if ext in ['pdf','doc','docx'] else ('🖼️' if ext in ['jpg','jpeg','png','gif','webp'] else ('📦' if ext in ['zip','tar','gz'] else '📎'))) %}
-      <div class="file-card">
+      {% set icon = '📊' if ext in ['csv','xlsx','xls'] else ('📄' if ext in ['pdf','doc','docx','txt'] else ('🖼️' if ext in ['jpg','jpeg','png','gif','webp','avif'] else ('📦' if ext in ['zip','tar','gz'] else ('🎵' if ext in ['mp3','wav','m4a'] else ('🎬' if ext in ['mp4','mov','avi'] else '📎'))))) %}
+      <div class="file-card" data-project="{{ f.project_id or 'none' }}">
         <div class="file-icon">{{ icon }}</div>
-        <div class="file-name">{{ f.original_name }}</div>
+        <div class="file-name" title="{{ f.original_name }}">{{ f.original_name[:32] }}{% if f.original_name|length > 32 %}…{% endif %}</div>
         <div class="file-size">{{ "%.1f"|format(f.size/1024) }} KB · {{ f.uploaded_at[:10] }}</div>
+        {% if f.project_name %}
+        <div class="file-project-tag">{{ f.project_name }}</div>
+        {% endif %}
         <div class="file-actions">
           <a href="{{ url_for('portal_files_download', file_id=f.id) }}" class="btn btn-outline" style="font-size:.72rem;padding:4px 10px;">↓ 다운로드</a>
           <form action="{{ url_for('portal_files_delete', file_id=f.id) }}" method="POST" onsubmit="return confirm('삭제?')">
@@ -93,4 +133,50 @@
     {% endif %}
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const zone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+
+zone.addEventListener('click', e => {
+  if (!e.target.closest('button') && !e.target.closest('select')) fileInput.click();
+});
+
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) {
+    fileInput.files = e.dataTransfer.files;
+    autoSubmitOrShow();
+  }
+});
+
+function autoSubmitOrShow() {
+  const f = fileInput.files[0];
+  if (!f) return;
+  document.getElementById('selected-file-name').textContent = f.name;
+  document.getElementById('selected-file-name').style.display = 'block';
+  document.getElementById('upload-form-row').style.display = 'flex';
+}
+
+function resetUpload() {
+  fileInput.value = '';
+  document.getElementById('selected-file-name').style.display = 'none';
+  document.getElementById('upload-form-row').style.display = 'none';
+}
+
+function filterProject(id, btn) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.file-card').forEach(card => {
+    if (id === 'all') card.style.display = '';
+    else if (id === 'none') card.style.display = card.dataset.project === 'none' ? '' : 'none';
+    else card.style.display = card.dataset.project === id ? '' : 'none';
+  });
+}
+</script>
 {% endblock %}

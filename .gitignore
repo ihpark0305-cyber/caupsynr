@@ -10,3 +10,7 @@ dist/
 build/
 .DS_Store
 _run.py
+portal.db
+portal_files/
+pubs_extra.json
+apps_extra.json

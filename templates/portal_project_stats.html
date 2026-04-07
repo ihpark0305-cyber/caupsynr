@@ -88,6 +88,57 @@
       </div>
       {% endif %}
 
+      <!-- 그룹별 통계 -->
+      {% if s.by_group and all_groups|length > 1 %}
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border-light);overflow-x:auto;">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">그룹별</p>
+        <table class="stat-tbl">
+          <thead><tr>
+            <th style="text-align:left;">그룹</th><th>N</th><th>평균</th><th>SD</th><th>중앙값</th><th>최솟값</th><th>최댓값</th>
+          </tr></thead>
+          <tbody>
+          {% for grp, gs in s.by_group.items() %}
+          <tr>
+            <td><span style="font-size:.78rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ grp }}</span></td>
+            <td>{{ gs.get('n','—') }}</td>
+            <td style="font-weight:600;">{{ gs.get('mean','—') }}</td>
+            <td>{{ gs.get('sd','—') }}</td>
+            <td>{{ gs.get('median','—') }}</td>
+            <td>{{ gs.get('min','—') }}</td>
+            <td>{{ gs.get('max','—') }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      <!-- 그룹 × 회차 교차 통계 -->
+      {% if s.by_group_phase and all_groups|length > 1 and all_phases|length > 0 %}
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border-light);overflow-x:auto;">
+        <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">그룹 × 회차 (평균)</p>
+        <table class="stat-tbl">
+          <thead><tr>
+            <th style="text-align:left;">그룹</th>
+            {% for ph in all_phases %}<th>{{ ph }}</th>{% endfor %}
+          </tr></thead>
+          <tbody>
+          {% for grp in all_groups %}
+          <tr>
+            <td><span style="font-size:.78rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ grp }}</span></td>
+            {% for ph in all_phases %}
+            {% set cell = s.by_group_phase.get(grp, {}).get(ph, {}) %}
+            <td style="font-weight:{% if cell %}600{% else %}400{% endif %};">
+              {% if cell %}{{ cell.get('mean','—') }}<span style="font-size:.7rem;color:var(--muted);"> (n={{ cell.get('n') }})</span>{% else %}—{% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
       <!-- 이상값 -->
       {% if s.outliers %}
       <div style="padding:14px 20px;border-bottom:1px solid var(--border-light);">

@@ -97,7 +97,17 @@ def init_db():
                 researcher_email TEXT NOT NULL,
                 uploaded_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
             );
+            CREATE TABLE IF NOT EXISTS accounts (
+                email TEXT PRIMARY KEY,
+                password TEXT NOT NULL
+            );
         ''')
+        # Seed default accounts if table is empty
+        existing = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
+        if existing == 0:
+            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("caupsynr@gmail.com", "tsl2025!"))
+            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", "tsl2025!"))
+            conn.commit()
 
 def _parse_sb_params(params):
     filters, order_by, select_fields = {}, None, "*"
@@ -179,6 +189,20 @@ def sb(method, table, data=None, params=""):
         if conn: conn.close()
 
 init_db()
+
+def _get_account(email):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT password FROM accounts WHERE email=?", (email,)).fetchone()
+        return row[0] if row else None
+
+def _set_account(email, password):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT INTO accounts (email,password) VALUES (?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password", (email, password))
+        conn.commit()
+
+def _account_exists(email):
+    with sqlite3.connect(DB_PATH) as conn:
+        return conn.execute("SELECT 1 FROM accounts WHERE email=?", (email,)).fetchone() is not None
 
 def login_required(f):
     @wraps(f)
@@ -574,18 +598,13 @@ def gallery_delete_event(key):
     return redirect(url_for('gallery'))
 
 # ─── Auth ────────────────────────────────────────────────────
-RESEARCHER_ACCOUNTS = {
-    "caupsynr@gmail.com":    "tsl2025!",
-    "yunjungchoi@cau.ac.kr": "tsl2025!",
-}
-
 @app.route("/login", methods=["GET","POST"])
 def login():
     error = None
     if request.method == "POST":
         email    = request.form.get("email","").strip()
         password = request.form.get("password","").strip()
-        if email in RESEARCHER_ACCOUNTS and RESEARCHER_ACCOUNTS[email]==password:
+        if _get_account(email) == password:
             session["researcher"] = email
             return redirect(url_for("portal"))
         error = "이메일 또는 비밀번호가 올바르지 않습니다."
@@ -917,11 +936,31 @@ def portal_project_stats(project_id):
                 for ph in phases:
                     if not any(m.get("phase")==ph and m.get("data",{}).get(vn) is not None for m in p_ms):
                         missing.append({"code":p["code"],"phase":ph})
+            # by_group stats (group_name per participant)
+            pid_to_group = {p["id"]: (p.get("group_name") or "미지정") for p in (participants if isinstance(participants,list) else [])}
+            by_group = {}
+            by_group_phase = {}  # {group: {phase: [vals]}}
+            for m in measurements:
+                val = m.get("data",{}).get(vn) if m.get("data") else None
+                if val is not None:
+                    try:
+                        fval = float(val)
+                        grp = pid_to_group.get(m.get("participant_id",""), "미지정")
+                        by_group.setdefault(grp, []).append(fval)
+                        ph = m.get("phase","전체") or "전체"
+                        by_group_phase.setdefault(grp, {}).setdefault(ph, []).append(fval)
+                    except: pass
             stats[vn]={"label":v.get("label") or vn,"unit":v.get("unit",""),
                        "overall":calc(all_vals),"by_phase":{ph:calc(vals) for ph,vals in by_phase.items()},
+                       "by_group":{grp:calc(vals) for grp,vals in by_group.items()},
+                       "by_group_phase":{grp:{ph:calc(vals) for ph,vals in phases.items()} for grp,phases in by_group_phase.items()},
                        "outliers":outliers,"missing":missing}
+    # collect all phases and groups for template
+    all_phases = sorted({m.get("phase","") for m in (measurements if isinstance(measurements,list) else []) if m.get("phase")})
+    all_groups = sorted({(p.get("group_name") or "미지정") for p in (participants if isinstance(participants,list) else [])})
     return render_template("portal_project_stats.html",
         project=proj[0],stats=stats,variables=variables if isinstance(variables,list) else [],
+        all_phases=all_phases,all_groups=all_groups,
         researcher=session["researcher"])
 
 @app.route("/portal/files")
@@ -929,7 +968,12 @@ def portal_project_stats(project_id):
 def portal_files():
     email = session["researcher"]
     files = sb("GET", "portal_files", params=f"?researcher_email=eq.{email}&order=uploaded_at.desc") or []
-    return render_template("portal_files.html", files=files, researcher=email)
+    projects = sb("GET", "projects", params=f"?researcher_email=eq.{email}&order=created_at.desc") or []
+    # Build project name lookup
+    proj_map = {p["id"]: p["name"] for p in (projects if isinstance(projects, list) else [])}
+    for f in (files if isinstance(files, list) else []):
+        f["project_name"] = proj_map.get(f.get("project_id"), "")
+    return render_template("portal_files.html", files=files, projects=projects if isinstance(projects, list) else [], researcher=email)
 
 @app.route("/portal/files/upload", methods=["POST"])
 @login_required
@@ -990,10 +1034,10 @@ def portal_change_password():
     new_pw=request.form.get("new_pw","").strip()
     confirm=request.form.get("confirm","").strip()
     email=session["researcher"]
-    if RESEARCHER_ACCOUNTS.get(email)!=current: flash("현재 비밀번호가 틀렸어요."); return redirect(url_for("portal_settings"))
+    if _get_account(email)!=current: flash("현재 비밀번호가 틀렸어요."); return redirect(url_for("portal_settings"))
     if new_pw!=confirm: flash("새 비밀번호가 일치하지 않아요."); return redirect(url_for("portal_settings"))
     if len(new_pw)<6: flash("비밀번호는 6자 이상이어야 해요."); return redirect(url_for("portal_settings"))
-    RESEARCHER_ACCOUNTS[email]=new_pw
+    _set_account(email, new_pw)
     flash("비밀번호가 변경됐어요.")
     return redirect(url_for("portal_settings"))
 
@@ -1003,8 +1047,8 @@ def portal_add_account():
     new_email=request.form.get("email","").strip()
     new_pw=request.form.get("password","").strip()
     if not new_email or not new_pw: flash("이메일과 비밀번호를 입력해주세요."); return redirect(url_for("portal_settings"))
-    if new_email in RESEARCHER_ACCOUNTS: flash("이미 존재하는 계정이에요."); return redirect(url_for("portal_settings"))
-    RESEARCHER_ACCOUNTS[new_email]=new_pw
+    if _account_exists(new_email): flash("이미 존재하는 계정이에요."); return redirect(url_for("portal_settings"))
+    _set_account(new_email, new_pw)
     flash(f"{new_email} 계정이 추가됐어요.")
     return redirect(url_for("portal_settings"))
 
