@@ -1,7 +1,9 @@
 flask>=3.0
 gunicorn>=21.2
 python-dotenv>=1.0
-httpx>=0.26
 openpyxl>=3.1
 scipy>=1.11
 numpy>=1.26
+flask-wtf>=1.2
+flask-limiter>=3.5
+flask-mail>=0.9

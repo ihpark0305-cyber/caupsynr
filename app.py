@@ -7,11 +7,19 @@ from scipy import stats as _scipy_stats
 import numpy as _np
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "tsl-dev-secret-2025")
+app.config['WTF_CSRF_TIME_LIMIT'] = 3600
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
+csrf = CSRFProtect(app)
+limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal.db')
 PORTAL_FILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal_files')
@@ -103,12 +111,26 @@ def init_db():
                 email TEXT PRIMARY KEY,
                 password TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS news (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT,
+                researcher_email TEXT NOT NULL,
+                published INTEGER DEFAULT 1,
+                created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS research_topics_extra (
+                key TEXT PRIMARY KEY,
+                title TEXT,
+                summary TEXT,
+                detail TEXT
+            );
         ''')
         # Seed default accounts if table is empty
         existing = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
         if existing == 0:
-            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("caupsynr@gmail.com", "tsl2025!"))
-            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", "tsl2025!"))
+            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("caupsynr@gmail.com", generate_password_hash("tsl2025!")))
+            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", generate_password_hash("tsl2025!")))
             conn.commit()
     # Migrate: add excluded column if missing
     with sqlite3.connect(DB_PATH) as conn:
@@ -204,9 +226,10 @@ def _get_account(email):
         row = conn.execute("SELECT password FROM accounts WHERE email=?", (email,)).fetchone()
         return row[0] if row else None
 
-def _set_account(email, password):
+def _set_account(email, password, already_hashed=False):
+    hashed = password if already_hashed else generate_password_hash(password)
     with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("INSERT INTO accounts (email,password) VALUES (?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password", (email, password))
+        conn.execute("INSERT INTO accounts (email,password) VALUES (?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password", (email, hashed))
         conn.commit()
 
 def _account_exists(email):
@@ -449,7 +472,8 @@ def _articles_by_year():
 @app.route("/")
 def home():
     recent = sorted(ARTICLES, key=lambda x: -x["year"])[:5]
-    return render_template("home.html", research_topics=RESEARCH_TOPICS, recent_pubs=recent)
+    news_list = sb("GET","news",params="?published=eq.1&order=created_at.desc") or []
+    return render_template("home.html", research_topics=RESEARCH_TOPICS, recent_pubs=recent, news=news_list[:5])
 
 @app.route("/research")
 def research():
@@ -608,12 +632,14 @@ def gallery_delete_event(key):
 
 # ─── Auth ────────────────────────────────────────────────────
 @app.route("/login", methods=["GET","POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     error = None
     if request.method == "POST":
         email    = request.form.get("email","").strip()
         password = request.form.get("password","").strip()
-        if _get_account(email) == password:
+        stored = _get_account(email)
+        if stored and check_password_hash(stored, password):
             session["researcher"] = email
             return redirect(url_for("portal"))
         error = "이메일 또는 비밀번호가 올바르지 않습니다."
@@ -1192,6 +1218,8 @@ def portal_files_download(file_id):
     rows = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
     if not rows: return redirect(url_for("portal_files"))
     row = rows[0]
+    if row.get("researcher_email") != session["researcher"]:
+        flash("접근 권한이 없습니다."); return redirect(url_for("portal_files"))
     path = os.path.join(PORTAL_FILES_DIR, row["filename"])
     if not os.path.exists(path): return redirect(url_for("portal_files"))
     from flask import send_file
@@ -1201,7 +1229,7 @@ def portal_files_download(file_id):
 @login_required
 def portal_files_delete(file_id):
     rows = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
-    if rows:
+    if rows and rows[0].get("researcher_email") == session["researcher"]:
         path = os.path.join(PORTAL_FILES_DIR, rows[0]["filename"])
         if os.path.exists(path): os.remove(path)
         sb("DELETE", "portal_files", params=f"?id=eq.{file_id}")
@@ -1219,7 +1247,8 @@ def portal_change_password():
     new_pw=request.form.get("new_pw","").strip()
     confirm=request.form.get("confirm","").strip()
     email=session["researcher"]
-    if _get_account(email)!=current: flash("현재 비밀번호가 틀렸어요."); return redirect(url_for("portal_settings"))
+    stored = _get_account(email)
+    if not stored or not check_password_hash(stored, current): flash("현재 비밀번호가 틀렸어요."); return redirect(url_for("portal_settings"))
     if new_pw!=confirm: flash("새 비밀번호가 일치하지 않아요."); return redirect(url_for("portal_settings"))
     if len(new_pw)<6: flash("비밀번호는 6자 이상이어야 해요."); return redirect(url_for("portal_settings"))
     _set_account(email, new_pw)
@@ -1320,6 +1349,188 @@ def api_receive_session():
     result=sb("POST","sessions",data={"participant_id":payload.get("participant_id"),
                                       "data":payload.get("data",{}),"notes":payload.get("notes","")})
     return jsonify({"ok":True,"result":result}),201
+
+# ── Project meta edit ────────────────────────────────
+@app.route("/portal/projects/<project_id>/edit", methods=["POST"])
+@login_required
+def portal_project_edit(project_id):
+    sb("PATCH", "projects",
+       data={"name": request.form.get("name","").strip(),
+             "description": request.form.get("description","").strip(),
+             "app_type": request.form.get("app_type","").strip()},
+       params=f"?id=eq.{project_id}")
+    flash("프로젝트 정보가 수정됐어요.")
+    return redirect(url_for("portal_project", project_id=project_id))
+
+# ── Project clone ─────────────────────────────────────
+@app.route("/portal/projects/<project_id>/clone", methods=["POST"])
+@login_required
+def portal_project_clone(project_id):
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj: return redirect(url_for("portal"))
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    new_id = str(_uuid.uuid4())
+    sb("POST","projects",data={
+        "id": new_id,
+        "name": proj[0]["name"] + " (복사)",
+        "description": proj[0].get("description",""),
+        "app_type": proj[0].get("app_type",""),
+        "researcher_email": session["researcher"],
+    })
+    for v in (variables if isinstance(variables,list) else []):
+        sb("POST","project_variables",data={
+            "project_id": new_id,
+            "name": v["name"], "label": v.get("label"), "var_type": v.get("var_type","number"), "unit": v.get("unit")
+        })
+    flash(f"'{proj[0]['name']}' 프로젝트가 복사됐어요. (변수 설정만 복사, 데이터 제외)")
+    return redirect(url_for("portal_project", project_id=new_id))
+
+# ── Excel export ──────────────────────────────────────
+@app.route("/portal/projects/<project_id>/export/excel")
+@login_required
+def portal_project_export_excel(project_id):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj: return redirect(url_for("portal"))
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+    measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
+    variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    p_map = {p["id"]: p for p in (participants if isinstance(participants,list) else [])}
+    var_names = [v["name"] for v in (variables if isinstance(variables,list) else [])]
+    var_labels = {v["name"]: (v.get("label") or v["name"]) for v in (variables if isinstance(variables,list) else [])}
+
+    wb = openpyxl.Workbook()
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0F6B6B")
+
+    def style_header(ws, headers):
+        for i, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=i, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            ws.column_dimensions[cell.column_letter].width = max(12, len(h)+2)
+
+    # Sheet 1: All data
+    ws1 = wb.active; ws1.title = "전체 데이터"
+    hdrs = ["참여자코드","그룹","성별","나이","회차","측정일","메모"] + [var_labels.get(n,n) for n in var_names]
+    style_header(ws1, hdrs)
+    for m in (measurements if isinstance(measurements,list) else []):
+        if m.get("excluded"): continue
+        p = p_map.get(m.get("participant_id",""), {})
+        row = [p.get("code",""), p.get("group_name",""), p.get("gender",""), p.get("age",""),
+               m.get("phase",""), m.get("measured_at","")[:10], m.get("notes","")]
+        for n in var_names:
+            val = m.get("data",{}).get(n) if m.get("data") else None
+            row.append(val)
+        ws1.append(row)
+
+    # Sheet 2: Group x Phase means
+    ws2 = wb.create_sheet("그룹×회차 평균")
+    phases = sorted({m.get("phase","") for m in (measurements if isinstance(measurements,list) else []) if m.get("phase") and not m.get("excluded")})
+    groups = sorted({p.get("group_name","미지정") for p in (participants if isinstance(participants,list) else [])})
+    s2_hdrs = ["변수","그룹"] + phases
+    style_header(ws2, s2_hdrs)
+    for vn in var_names:
+        for grp in groups:
+            row = [var_labels.get(vn,vn), grp]
+            for ph in phases:
+                vals = []
+                for m in (measurements if isinstance(measurements,list) else []):
+                    if m.get("excluded"): continue
+                    p = p_map.get(m.get("participant_id",""),{})
+                    if (p.get("group_name") or "미지정") == grp and m.get("phase") == ph:
+                        v = m.get("data",{}).get(vn) if m.get("data") else None
+                        if v is not None:
+                            try: vals.append(float(v))
+                            except: pass
+                row.append(round(sum(vals)/len(vals),3) if vals else "")
+            ws2.append(row)
+
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    proj_name = proj[0]["name"].replace("/","_").replace("\\","_")
+    return Response(buf.read(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={proj_name}.xlsx"})
+
+# ── Measurement edit ──────────────────────────────────
+@app.route("/portal/projects/<project_id>/measurements/<m_id>/edit", methods=["POST"])
+@login_required
+def portal_measurement_edit(project_id, m_id):
+    rows = sb("GET","measurements",params=f"?id=eq.{m_id}")
+    if not rows: return redirect(url_for("portal_project", project_id=project_id))
+    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    data_dict = {}
+    if isinstance(variables, list):
+        for v in variables:
+            val = request.form.get(f"var_{v['name']}", "").strip()
+            if val:
+                try: data_dict[v['name']] = float(val)
+                except: data_dict[v['name']] = val
+    sb("PATCH","measurements",
+       data={"phase": request.form.get("phase","").strip() or None,
+             "notes": request.form.get("notes","").strip() or None,
+             "data": data_dict},
+       params=f"?id=eq.{m_id}")
+    return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-measurements"))
+
+# ── Participant bulk group change ─────────────────────
+@app.route("/portal/projects/<project_id>/participants/bulk-group", methods=["POST"])
+@login_required
+def portal_participants_bulk_group(project_id):
+    ids = request.form.getlist("participant_ids")
+    group_name = request.form.get("group_name","").strip() or None
+    for pid in ids:
+        sb("PATCH","project_participants",data={"group_name": group_name},params=f"?id=eq.{pid}")
+    flash(f"{len(ids)}명의 그룹이 변경됐어요.")
+    return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-participants"))
+
+# ── News management ───────────────────────────────────
+@app.route("/portal/news")
+@login_required
+def portal_news():
+    email = session["researcher"]
+    news_list = sb("GET","news",params="?order=created_at.desc") or []
+    return render_template("portal_news.html", news=news_list, researcher=email)
+
+@app.route("/portal/news/new", methods=["POST"])
+@login_required
+def portal_news_new():
+    sb("POST","news",data={
+        "title": request.form.get("title","").strip(),
+        "content": request.form.get("content","").strip(),
+        "researcher_email": session["researcher"],
+        "published": 1 if request.form.get("published") else 0,
+    })
+    flash("공지가 등록됐어요.")
+    return redirect(url_for("portal_news"))
+
+@app.route("/portal/news/<news_id>/edit", methods=["POST"])
+@login_required
+def portal_news_edit(news_id):
+    sb("PATCH","news",
+       data={"title": request.form.get("title","").strip(),
+             "content": request.form.get("content","").strip(),
+             "published": 1 if request.form.get("published") else 0},
+       params=f"?id=eq.{news_id}")
+    flash("공지가 수정됐어요.")
+    return redirect(url_for("portal_news"))
+
+@app.route("/portal/news/<news_id>/delete", methods=["POST"])
+@login_required
+def portal_news_delete(news_id):
+    sb("DELETE","news",params=f"?id=eq.{news_id}")
+    flash("공지가 삭제됐어요.")
+    return redirect(url_for("portal_news"))
+
+# ── API documentation ─────────────────────────────────
+@app.route("/api/docs")
+@login_required
+def api_docs():
+    api_key = os.getenv("APP_API_KEY","tsl-app-key-2025")
+    return render_template("api_docs.html", researcher=session["researcher"], api_key=api_key)
 
 if __name__ == "__main__":
     app.run(debug=False)
