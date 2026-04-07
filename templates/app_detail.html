@@ -10,105 +10,126 @@
   </div>
 </div>
 
-<!-- App Hero -->
-<div class="app-detail-hero" style="background:{{ app.gradient }};">
-  <div class="app-detail-hero-inner">
-    <span class="app-detail-icon">{{ app.icon }}</span>
-    <div>
-      {% if app.label %}<p class="app-detail-label">{{ app.label }}</p>{% endif %}
-      <h1 class="app-detail-name">{{ app.name }}</h1>
-      <p class="app-detail-fullname">({{ app.full_name }})</p>
-      {% if app.tags %}
-      <div class="app-badges" style="margin-top:14px;">
-        {% for tag in app.tags %}<span class="app-badge app-badge-light">{{ tag }}</span>{% endfor %}
+<!-- ── Hero ── -->
+<div class="apd-hero" style="background:{{ app.gradient }};">
+  <div class="apd-hero-inner">
+    <div class="apd-icon">{{ app.icon }}</div>
+    {% if app.label %}<p class="apd-label-text">{{ app.label }}</p>{% endif %}
+    <h1 class="apd-title">{{ app.name }}</h1>
+    {% if app.full_name %}<p class="apd-subtitle">{{ app.full_name }}</p>{% endif %}
+    {% if app.tags %}
+    <div class="apd-tags">
+      {% for tag in app.tags %}<span class="apd-tag">{{ tag }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── English description ── -->
+{% if app.desc_en %}
+<section class="apd-section">
+  <div class="container-sm" style="text-align:center;">
+    <p class="apd-desc">{{ app.desc_en }}</p>
+  </div>
+</section>
+{% endif %}
+
+<!-- ── Korean description ── -->
+{% if app.desc_kr %}
+<section class="apd-section apd-section-alt">
+  <div class="container-sm" style="text-align:center;">
+    <span class="label" style="display:block;margin-bottom:12px;">한국어 소개</span>
+    <p class="apd-desc-kr">{{ app.desc_kr | replace('\n', '<br>') | safe }}</p>
+  </div>
+</section>
+{% endif %}
+
+<!-- ── Content images ── -->
+{% if app.content_img_kr or app.content_img_en %}
+<section class="apd-section">
+  <div class="container">
+    <div class="apd-img-grid">
+      {% if app.content_img_kr %}
+      <div class="apd-img-block">
+        <p class="apd-img-label">한글 버전 구성 내용</p>
+        <img src="{{ url_for('static', filename=app.content_img_kr) }}" alt="{{ app.name }} KR" class="apd-img">
+      </div>
+      {% endif %}
+      {% if app.content_img_en %}
+      <div class="apd-img-block">
+        <p class="apd-img-label">English Version</p>
+        <img src="{{ url_for('static', filename=app.content_img_en) }}" alt="{{ app.name }} EN" class="apd-img">
       </div>
       {% endif %}
     </div>
   </div>
-</div>
+</section>
+{% endif %}
 
-<!-- Content -->
-<section>
-  <div class="container">
+<!-- ── Screenshot ── -->
+{% if app.screenshot %}
+<section class="apd-section apd-section-alt">
+  <div class="container-sm" style="text-align:center;">
+    <img src="{{ url_for('static', filename=app.screenshot) }}" alt="{{ app.name }}" class="apd-screenshot">
+  </div>
+</section>
+{% endif %}
 
-    <!-- Description -->
-    {% if app.desc_kr or app.desc_en %}
-    <div class="app-desc-block">
-      {% if app.desc_kr %}
-      <p class="app-desc-kr">{{ app.desc_kr | replace('\n', '<br>') | safe }}</p>
-      {% endif %}
-      {% if app.desc_en %}
-      <p class="app-desc-en">{{ app.desc_en }}</p>
-      {% endif %}
-    </div>
-    {% endif %}
-
-    <!-- Main screenshot -->
-    {% if app.screenshot %}
-    <div class="app-screenshot-wrap">
-      <img src="{{ url_for('static', filename=app.screenshot) }}"
-           alt="{{ app.name }} screenshot" class="app-main-screenshot">
-    </div>
-    {% endif %}
-
-    <!-- Content images (KR / EN versions) -->
-    {% if app.content_img_kr or app.content_img_en %}
-    <div class="app-content-imgs">
-      {% if app.content_img_kr %}
-      <div class="app-content-img-block">
-        <p class="app-img-label">&lt;한글 버전 구성 내용&gt;</p>
-        <img src="{{ url_for('static', filename=app.content_img_kr) }}"
-             alt="{{ app.name }} KR content">
-      </div>
-      {% endif %}
-      {% if app.content_img_en %}
-      <div class="app-content-img-block">
-        <p class="app-img-label">&lt;영문 버전 구성 내용&gt;</p>
-        <img src="{{ url_for('static', filename=app.content_img_en) }}"
-             alt="{{ app.name }} EN content">
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}
-
-    <!-- Download buttons -->
-    {% if app.dl_kr or app.dl_en %}
-    <div class="app-dl-row">
+<!-- ── Download ── -->
+{% if app.dl_kr or app.dl_en %}
+<section class="apd-section" style="text-align:center;">
+  <div class="container-sm">
+    <span class="label" style="display:block;margin-bottom:16px;">Download</span>
+    <h2 style="margin-bottom:32px;">Available on One Store</h2>
+    <div class="apd-dl-row">
       {% if app.dl_kr %}
-      <a href="{{ app.dl_kr }}" target="_blank" rel="noopener" class="store-btn store-btn-kr">
-        <span class="store-flag">🇰🇷</span>
-        <span><small>One Store</small><strong>한글판 다운로드</strong></span>
+      <a href="{{ app.dl_kr }}" target="_blank" rel="noopener" class="apd-dl-btn">
+        <span class="apd-dl-flag">🇰🇷</span>
+        <span class="apd-dl-text">
+          <small>One Store</small>
+          <strong>한글판 다운로드</strong>
+        </span>
       </a>
       {% endif %}
       {% if app.dl_en %}
-      <a href="{{ app.dl_en }}" target="_blank" rel="noopener" class="store-btn store-btn-en">
-        <span class="store-flag">🌐</span>
-        <span><small>One Store</small><strong>ENG Ver. Download</strong></span>
+      <a href="{{ app.dl_en }}" target="_blank" rel="noopener" class="apd-dl-btn">
+        <span class="apd-dl-flag">🌐</span>
+        <span class="apd-dl-text">
+          <small>One Store</small>
+          <strong>ENG Ver. Download</strong>
+        </span>
       </a>
       {% endif %}
     </div>
-    {% endif %}
+  </div>
+</section>
+{% endif %}
 
-    <!-- Mind Therapy subsections -->
-    {% if app.subsections %}
-    <div class="app-sub-grid">
+<!-- ── Mind Therapy subsections ── -->
+{% if app.subsections %}
+<section class="apd-section apd-section-alt">
+  <div class="container">
+    <div style="text-align:center;margin-bottom:48px;">
+      <span class="label" style="display:block;margin-bottom:12px;">Features</span>
+      <h2>What's inside</h2>
+    </div>
+    <div class="apd-sub-grid">
       {% for sub in app.subsections %}
-      <div class="app-sub-card">
-        <div class="app-sub-card-img">
+      <div class="apd-sub-card">
+        <div class="apd-sub-img">
           <img src="{{ url_for('static', filename=sub.image) }}" alt="{{ sub.title }}">
         </div>
-        <div class="app-sub-card-body">
+        <div class="apd-sub-body">
           <h3>{{ sub.title }}</h3>
           <p>{{ sub.desc }}</p>
           {% if sub.links %}
-          <p class="app-sub-links-label">More information</p>
-          <div class="app-sub-links">
+          <div class="apd-sub-links">
             {% for link in sub.links %}
-            {% if link.url %}
-            <a href="{{ link.url }}" target="_blank" class="app-sub-link">{{ link.text }}</a>
-            {% else %}
-            <span class="app-sub-link-plain">{{ link.text }}</span>
-            {% endif %}
+              {% if link.url %}
+              <a href="{{ link.url }}" target="_blank" class="apd-sub-link">{{ link.text }}</a>
+              {% else %}
+              <span class="apd-sub-link apd-sub-link-plain">{{ link.text }}</span>
+              {% endif %}
             {% endfor %}
           </div>
           {% endif %}
@@ -116,17 +137,16 @@
       </div>
       {% endfor %}
     </div>
-    {% endif %}
-
   </div>
 </section>
+{% endif %}
 
-<!-- Research basis -->
-<section style="background:var(--surface2);">
-  <div class="container-sm" style="text-align:center;">
+<!-- ── CTA footer ── -->
+<section class="apd-section" style="text-align:center;">
+  <div class="container-sm">
     <span class="label" style="display:block;margin-bottom:12px;">Research-based</span>
     <h2 style="margin-bottom:16px;">Built on clinical evidence</h2>
-    <p style="color:var(--muted);margin-bottom:28px;">This application has been developed through rigorous research and validated in clinical studies.</p>
+    <p style="color:var(--muted);margin-bottom:32px;">This application has been developed through rigorous research and validated in clinical studies.</p>
     <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
       <a href="{{ url_for('publications') }}" class="btn btn-outline">Related Publications</a>
       <a href="{{ url_for('apps') }}" class="btn btn-primary">← All Apps</a>
