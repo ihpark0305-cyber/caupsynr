@@ -3,6 +3,8 @@ from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
 import os, sqlite3, uuid as _uuid, json, csv, io, re
+from scipy import stats as _scipy_stats
+import numpy as _np
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
@@ -108,6 +110,12 @@ def init_db():
             conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("caupsynr@gmail.com", "tsl2025!"))
             conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", "tsl2025!"))
             conn.commit()
+    # Migrate: add excluded column if missing
+    try:
+        conn.execute("ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
 
 def _parse_sb_params(params):
     filters, order_by, select_fields = {}, None, "*"
@@ -963,6 +971,180 @@ def portal_project_stats(project_id):
     return render_template("portal_project_stats.html",
         project=proj[0],stats=stats,variables=variables if isinstance(variables,list) else [],
         all_phases=all_phases,all_groups=all_groups,
+        researcher=session["researcher"])
+
+# ── Variable edit / delete ────────────────────────────
+@app.route("/portal/projects/<project_id>/variables/<var_id>/edit", methods=["POST"])
+@login_required
+def portal_variable_edit(project_id, var_id):
+    sb("PATCH", "project_variables",
+       data={
+           "label":    request.form.get("label","").strip() or None,
+           "unit":     request.form.get("unit","").strip() or None,
+           "var_type": request.form.get("var_type","number"),
+       },
+       params=f"?id=eq.{var_id}")
+    return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-variables"))
+
+@app.route("/portal/projects/<project_id>/variables/<var_id>/delete", methods=["POST"])
+@login_required
+def portal_variable_delete(project_id, var_id):
+    sb("DELETE", "project_variables", params=f"?id=eq.{var_id}")
+    return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-variables"))
+
+# ── Measurement exclude toggle ────────────────────────
+@app.route("/portal/projects/<project_id>/measurements/<m_id>/toggle-exclude", methods=["POST"])
+@login_required
+def portal_measurement_toggle_exclude(project_id, m_id):
+    rows = sb("GET", "measurements", params=f"?id=eq.{m_id}")
+    if rows:
+        new_val = 0 if rows[0].get("excluded") else 1
+        sb("PATCH", "measurements", data={"excluded": new_val}, params=f"?id=eq.{m_id}")
+    return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-measurements"))
+
+# ── Statistical tests page ────────────────────────────
+@app.route("/portal/projects/<project_id>/tests")
+@login_required
+def portal_project_tests(project_id):
+    import math
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
+    variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+
+    # Inject group_name into measurements
+    pid_to_group = {p["id"]: (p.get("group_name") or "미지정") for p in (participants if isinstance(participants,list) else [])}
+    measurements = [m for m in (measurements_raw if isinstance(measurements_raw,list) else []) if not m.get("excluded")]
+    for m in measurements:
+        m["group_name"] = pid_to_group.get(m.get("participant_id",""), "미지정")
+
+    groups = sorted({m["group_name"] for m in measurements})
+    phases = sorted({m.get("phase","") for m in measurements if m.get("phase")})
+
+    results = {}
+    if isinstance(variables,list):
+        for v in variables:
+            vn = v["name"]
+            vres = {"label": v.get("label") or vn, "unit": v.get("unit",""), "tests": [], "paired": []}
+
+            # --- Independent tests between every pair of groups ---
+            grp_vals = {}
+            for m in measurements:
+                val = m.get("data",{}).get(vn) if m.get("data") else None
+                if val is not None:
+                    try: grp_vals.setdefault(m["group_name"],[]).append(float(val))
+                    except: pass
+
+            grp_list = list(grp_vals.keys())
+            for i in range(len(grp_list)):
+                for j in range(i+1, len(grp_list)):
+                    g1, g2 = grp_list[i], grp_list[j]
+                    a, b = grp_vals[g1], grp_vals[g2]
+                    if len(a) < 2 or len(b) < 2: continue
+                    try:
+                        t_stat, t_p = _scipy_stats.ttest_ind(a, b, equal_var=False)
+                        u_stat, u_p = _scipy_stats.mannwhitneyu(a, b, alternative="two-sided")
+                        # Cohen's d
+                        pooled_n = len(a)+len(b)
+                        pooled_sd = _np.sqrt(((len(a)-1)*_np.var(a,ddof=1) + (len(b)-1)*_np.var(b,ddof=1)) / (pooled_n-2)) if pooled_n > 2 else 0
+                        cohens_d = ((_np.mean(a) - _np.mean(b)) / pooled_sd) if pooled_sd > 0 else 0
+                        # Rank-biserial r for Mann-Whitney
+                        r_rb = 1 - 2*u_stat / (len(a)*len(b))
+                        vres["tests"].append({
+                            "g1": g1, "g2": g2,
+                            "n1": len(a), "n2": len(b),
+                            "mean1": round(float(_np.mean(a)),3), "mean2": round(float(_np.mean(b)),3),
+                            "sd1": round(float(_np.std(a,ddof=1)),3), "sd2": round(float(_np.std(b,ddof=1)),3),
+                            "t": round(float(t_stat),3), "t_p": round(float(t_p),4),
+                            "U": round(float(u_stat),1), "u_p": round(float(u_p),4),
+                            "d": round(float(cohens_d),3), "r": round(float(r_rb),3),
+                            "t_sig": t_p < 0.05, "u_sig": u_p < 0.05,
+                        })
+                    except Exception as e:
+                        print(f"test error {vn} {g1} vs {g2}: {e}")
+
+            # --- Paired t-test (pre vs post within same participant) ---
+            if len(phases) >= 2:
+                ph_pairs = [(phases[i], phases[i+1]) for i in range(len(phases)-1)]
+                for pre_ph, post_ph in ph_pairs:
+                    paired_pre, paired_post = [], []
+                    for p in (participants if isinstance(participants,list) else []):
+                        pre_m  = [m for m in measurements if m.get("participant_id")==p["id"] and m.get("phase")==pre_ph]
+                        post_m = [m for m in measurements if m.get("participant_id")==p["id"] and m.get("phase")==post_ph]
+                        if pre_m and post_m:
+                            pv = pre_m[0].get("data",{}).get(vn)
+                            ov = post_m[0].get("data",{}).get(vn)
+                            if pv is not None and ov is not None:
+                                try: paired_pre.append(float(pv)); paired_post.append(float(ov))
+                                except: pass
+                    if len(paired_pre) >= 2:
+                        try:
+                            t_s, t_p = _scipy_stats.ttest_rel(paired_pre, paired_post)
+                            diffs = [b-a for a,b in zip(paired_pre,paired_post)]
+                            sd_d = float(_np.std(diffs,ddof=1))
+                            d_paired = float(_np.mean(diffs)) / sd_d if sd_d > 0 else 0
+                            vres["paired"].append({
+                                "pre_phase": pre_ph, "post_phase": post_ph,
+                                "n": len(paired_pre),
+                                "mean_pre": round(float(_np.mean(paired_pre)),3),
+                                "mean_post": round(float(_np.mean(paired_post)),3),
+                                "mean_diff": round(float(_np.mean(diffs)),3),
+                                "sd_diff": round(sd_d,3),
+                                "t": round(float(t_s),3), "p": round(float(t_p),4),
+                                "d": round(d_paired,3),
+                                "sig": t_p < 0.05,
+                            })
+                        except Exception as e:
+                            print(f"paired test error {vn}: {e}")
+            results[vn] = vres
+
+    # --- Correlation matrix ---
+    corr_matrix = None
+    corr_labels = []
+    if isinstance(variables,list) and len(variables) >= 2:
+        num_vars = [v for v in variables if v.get("var_type","number") == "number"]
+        if len(num_vars) >= 2:
+            corr_labels = [v.get("label") or v["name"] for v in num_vars]
+            col_data = []
+            for v in num_vars:
+                col_data.append([float(m.get("data",{}).get(v["name"])) for m in measurements
+                                  if m.get("data",{}).get(v["name"]) is not None
+                                  and str(m.get("data",{}).get(v["name"],"")).replace(".","",1).lstrip("-").isdigit()])
+            # Use pairwise complete obs approach
+            n_vars = len(num_vars)
+            matrix = [[None]*n_vars for _ in range(n_vars)]
+            for i in range(n_vars):
+                for j in range(n_vars):
+                    if i == j:
+                        matrix[i][j] = 1.0
+                    else:
+                        # Get paired values (rows where both have data)
+                        pairs = []
+                        for m in measurements:
+                            if not m.get("data"): continue
+                            vi = m["data"].get(num_vars[i]["name"])
+                            vj = m["data"].get(num_vars[j]["name"])
+                            if vi is not None and vj is not None:
+                                try: pairs.append((float(vi), float(vj)))
+                                except: pass
+                        if len(pairs) >= 3:
+                            xs = [p[0] for p in pairs]
+                            ys = [p[1] for p in pairs]
+                            try:
+                                r, p_val = _scipy_stats.pearsonr(xs, ys)
+                                matrix[i][j] = round(float(r), 3)
+                            except: matrix[i][j] = None
+            corr_matrix = matrix
+
+    return render_template("portal_project_tests.html",
+        project=proj[0],
+        results=results,
+        variables=variables if isinstance(variables,list) else [],
+        corr_matrix=corr_matrix,
+        corr_labels=corr_labels,
+        groups=groups,
+        phases=phases,
         researcher=session["researcher"])
 
 @app.route("/portal/files")
