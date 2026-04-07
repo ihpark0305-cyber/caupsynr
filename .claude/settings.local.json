@@ -20,7 +20,10 @@
       "Bash(python -c \"import app; print\\(''app.py OK''\\)\")",
       "Bash(python -c \"import app; print\\(''OK''\\)\")",
       "Bash(python -c \"import app; import sqlite3; rows=[r[0] for r in sqlite3.connect\\(app.DB_PATH\\).execute\\(\"\"SELECT name FROM sqlite_master WHERE type=''table''\"\"\\).fetchall\\(\\)]; print\\(''OK tables:'', rows\\)\")",
-      "Bash(python -c \":*)"
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import scipy; print\\(''scipy ok''\\)\")",
+      "Bash(python -c \"import numpy; print\\(''numpy ok''\\)\")",
+      "Bash(python -c \"from scipy import stats; import numpy; print\\(''ok''\\)\")"
     ]
   },
   "hooks": {
