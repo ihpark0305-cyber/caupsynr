@@ -15,7 +15,9 @@
       "Bash(ls -la \"C:\\\\Users\\\\hpark\\\\OneDrive\\\\문서\\\\TSL\\\\web\\\\static\"\" && ls -la \"C:UsershparkOneDrive문서TSLwebtemplates\"\")",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(python -c \"import app; print\\(''app.py OK''\\)\")"
     ]
   },
   "hooks": {
