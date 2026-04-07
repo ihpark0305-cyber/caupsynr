@@ -11,6 +11,12 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+<script>
+  (function(){
+    var t = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
 
 <!-- ── NAV ── -->
 <header class="site-header">
@@ -32,6 +38,7 @@
       <a href="{{ url_for('contact') }}"      {% if request.endpoint=='contact' %}class="active"{% endif %}>Contact</a>
       <a href="{{ url_for('login') }}"        class="nav-cta {% if request.endpoint=='login' %}active{% endif %}">🔒 Researcher Portal</a>
     </nav>
+    <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">☀</button>
     <button class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>
   </div>
 </header>
@@ -61,6 +68,10 @@
         <a href="mailto:caupsynr@gmail.com">caupsynr@gmail.com</a>
         <a href="mailto:yunjungchoi@cau.ac.kr">yunjungchoi@cau.ac.kr</a>
         <a href="tel:+82-2-820-5986">+82-2-820-5986</a>
+        <div class="footer-social">
+          <a href="https://www.instagram.com" target="_blank" rel="noopener" title="Instagram" class="footer-social-link">📸 Instagram</a>
+          <a href="https://github.com" target="_blank" rel="noopener" title="GitHub" class="footer-social-link">🐙 GitHub</a>
+        </div>
       </div>
     </div>
     <div class="footer-bottom">
@@ -76,6 +87,20 @@
   btn.addEventListener('click', () => {
     nav.classList.toggle('open');
     btn.textContent = nav.classList.contains('open') ? '✕' : '☰';
+  });
+
+  // Dark mode toggle
+  const themeToggle = document.getElementById('theme-toggle');
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    themeToggle.textContent = t === 'dark' ? '☀' : '🌙';
+    localStorage.setItem('theme', t);
+  }
+  // Set correct icon on load
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
+  themeToggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
   });
 </script>
 {% block scripts %}{% endblock %}

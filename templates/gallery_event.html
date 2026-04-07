@@ -145,7 +145,12 @@ function showPrev() {
 }
 {% endif %}
 
+const photoSrcs = Array.from(document.querySelectorAll('.ev-photo-item img')).map(i => i.src);
+let currentPhotoIdx = 0;
+
 function openLightbox(src) {
+  currentPhotoIdx = photoSrcs.indexOf(src);
+  if (currentPhotoIdx === -1) currentPhotoIdx = 0;
   document.getElementById('lightbox-img').src = src;
   document.getElementById('lightbox').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -154,6 +159,20 @@ function closeLightbox() {
   document.getElementById('lightbox').classList.remove('open');
   document.body.style.overflow = '';
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+function lightboxPrev() {
+  if (!photoSrcs.length) return;
+  currentPhotoIdx = (currentPhotoIdx - 1 + photoSrcs.length) % photoSrcs.length;
+  document.getElementById('lightbox-img').src = photoSrcs[currentPhotoIdx];
+}
+function lightboxNext() {
+  if (!photoSrcs.length) return;
+  currentPhotoIdx = (currentPhotoIdx + 1) % photoSrcs.length;
+  document.getElementById('lightbox-img').src = photoSrcs[currentPhotoIdx];
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLightbox();
+  else if (e.key === 'ArrowLeft') lightboxPrev();
+  else if (e.key === 'ArrowRight') lightboxNext();
+});
 </script>
 {% endblock %}

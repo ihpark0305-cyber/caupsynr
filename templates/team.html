@@ -50,11 +50,9 @@
       {% for m in team.phd %}
       <div class="member-card">
         <img class="member-photo" src="{{ url_for('static', filename=m.image) }}" alt="{{ m.name }}">
-        <div>
-          <div class="member-degree">Ph.D. Student</div>
-          <div class="member-name">{{ m.name }}</div>
-          <div class="member-interest">{{ m.interest }}</div>
-        </div>
+        <div class="member-degree">Ph.D. Student</div>
+        <div class="member-name">{{ m.name }}</div>
+        <div class="member-interest">{{ m.interest }}</div>
       </div>
       {% endfor %}
     </div>
@@ -64,11 +62,9 @@
       {% for m in team.ma %}
       <div class="member-card">
         <img class="member-photo" src="{{ url_for('static', filename=m.image) }}" alt="{{ m.name }}">
-        <div>
-          <div class="member-degree">M.A. Student</div>
-          <div class="member-name">{{ m.name }}</div>
-          <div class="member-interest">{{ m.interest }}</div>
-        </div>
+        <div class="member-degree">M.A. Student</div>
+        <div class="member-name">{{ m.name }}</div>
+        <div class="member-interest">{{ m.interest }}</div>
       </div>
       {% endfor %}
     </div>

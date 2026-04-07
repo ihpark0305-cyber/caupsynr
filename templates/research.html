@@ -65,6 +65,12 @@
   </div>
 </section>
 
+<div class="research-progress" id="research-progress">
+  {% for r in research_topics %}
+  <button class="rp-dot" data-key="{{ r.key }}" onclick="activate('{{ r.key }}')" title="{{ r.title }}"></button>
+  {% endfor %}
+</div>
+
 <!-- Detail Sections -->
 <section style="background:var(--surface2);padding-top:0;" id="research-detail-area">
   <div class="container">
@@ -210,10 +216,23 @@ if (param) activate(param);
 function activate(key) {
   panes.forEach(p => p.classList.toggle('active', p.id === 'tab-' + key));
   history.replaceState({}, '', '?topic=' + key);
+  // Update progress dots
+  document.querySelectorAll('.rp-dot').forEach(d =>
+    d.classList.toggle('active', d.dataset.key === key));
   const area = document.getElementById('research-detail-area');
   if (area) {
     setTimeout(() => area.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
   }
 }
+
+// Show/hide progress dots based on scroll position
+const progressEl = document.getElementById('research-progress');
+const detailArea = document.getElementById('research-detail-area');
+window.addEventListener('scroll', () => {
+  if (!progressEl || !detailArea) return;
+  const rect = detailArea.getBoundingClientRect();
+  const visible = rect.top < window.innerHeight && rect.bottom > 0;
+  progressEl.classList.toggle('visible', visible);
+});
 </script>
 {% endblock %}

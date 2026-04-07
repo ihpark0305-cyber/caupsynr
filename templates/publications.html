@@ -25,6 +25,10 @@
 
     <!-- ── ARTICLES ── -->
     <div id="section-articles">
+      <!-- Search -->
+      <div class="pub-search-wrap">
+        <input id="pub-search" type="text" placeholder="🔍  Search by title, author, or journal…" oninput="searchPubs(this.value)">
+      </div>
       <!-- Year filter -->
       <div class="pub-filter" id="year-filter">
         <button class="year-btn active" onclick="filterYear('all')">All Years</button>
@@ -102,6 +106,21 @@ function switchTab(tab) {
   document.getElementById('section-copyright').style.display = isArt ? 'none' : '';
   document.getElementById('tab-articles-btn').classList.toggle('active', isArt);
   document.getElementById('tab-copyright-btn').classList.toggle('active', !isArt);
+}
+function searchPubs(query) {
+  const q = query.trim().toLowerCase();
+  // Reset year filter to All Years when searching
+  document.querySelectorAll('.year-btn').forEach(b =>
+    b.classList.toggle('active', b.textContent.trim() === 'All Years'));
+  document.querySelectorAll('.pub-year-group').forEach(g => {
+    let anyVisible = false;
+    g.querySelectorAll('.pub-list-item').forEach(item => {
+      const match = !q || item.textContent.toLowerCase().includes(q);
+      item.style.display = match ? '' : 'none';
+      if (match) anyVisible = true;
+    });
+    g.style.display = anyVisible ? '' : 'none';
+  });
 }
 </script>
 {% endblock %}
