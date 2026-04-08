@@ -138,6 +138,31 @@
   </div>
 </section>
 
+<!-- ── NEWS ── -->
+{% if news %}
+<section style="background:var(--surface);">
+  <div class="container">
+    <div class="section-header">
+      <span class="label">ANNOUNCEMENTS</span>
+      <h2 class="section-title">공지사항</h2>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;max-width:720px;margin:0 auto;">
+      {% for n in news %}
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;">
+        <div>
+          <h3 style="font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;color:var(--dark);margin-bottom:6px;">{{ n.title }}</h3>
+          {% if n.content %}
+          <p style="font-size:.88rem;color:var(--muted);line-height:1.6;">{{ n.content[:120] }}{% if n.content|length > 120 %}…{% endif %}</p>
+          {% endif %}
+        </div>
+        <span style="font-size:.75rem;color:var(--muted);white-space:nowrap;flex-shrink:0;margin-top:2px;">{{ n.created_at[:10] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 <!-- ── APPS CTA ── -->
 <section style="background:var(--dark);position:relative;overflow:hidden;">
   <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 60% 50%,rgba(15,107,107,.4) 0%,transparent 60%);pointer-events:none;"></div>

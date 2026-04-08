@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}API 문서 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:28px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.portal-header-inner{display:flex;justify-content:space-between;align-items:center;}
+
+/* Doc layout */
+.doc-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 32px;margin-bottom:20px;}
+.doc-section-title{font-family:'Nunito',sans-serif;font-size:.78rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px;}
+.doc-section h2{font-size:1.05rem;font-weight:700;color:var(--dark);margin:0 0 16px;}
+.doc-section p{font-size:.9rem;color:var(--text,#374151);line-height:1.65;margin:0 0 12px;}
+.doc-section p:last-child{margin-bottom:0;}
+
+/* Code blocks */
+pre.code-block{background:#0f1923;color:#e2e8f0;border-radius:10px;padding:18px 20px;font-size:.82rem;overflow-x:auto;line-height:1.65;margin:12px 0 0;}
+pre.code-block code{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;}
+.inline-code{background:var(--surface2,#f3f4f6);color:var(--accent);padding:2px 7px;border-radius:5px;font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:.82em;}
+
+/* API key box */
+.apikey-box{background:#0f1923;border-radius:10px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;}
+.apikey-value{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:.88rem;color:#a3e635;word-break:break-all;flex:1;}
+.copy-btn{flex-shrink:0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#e2e8f0;font-size:.75rem;font-weight:600;padding:6px 13px;border-radius:7px;cursor:pointer;transition:background .15s,transform .1s;white-space:nowrap;}
+.copy-btn:hover{background:rgba(255,255,255,.15);}
+.copy-btn.copied{background:var(--accent);border-color:var(--accent);color:#fff;}
+
+/* Warning box */
+.warning-box{background:#fffbeb;border:1px solid #fcd34d;border-radius:9px;padding:12px 16px;font-size:.84rem;color:#92400e;display:flex;align-items:flex-start;gap:10px;margin-top:14px;}
+.warning-box svg{flex-shrink:0;margin-top:1px;}
+
+/* Table */
+.doc-table{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:12px;}
+.doc-table th{padding:9px 14px;text-align:left;font-weight:600;color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);border-bottom:1px solid var(--border);}
+.doc-table td{padding:10px 14px;border-bottom:1px solid var(--border-light,#f1f5f9);}
+.doc-table tr:last-child td{border-bottom:none;}
+.doc-table td:first-child{font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:.8rem;color:var(--accent);}
+
+/* Method badge */
+.method-badge{display:inline-block;background:#dcfce7;color:#15803d;font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:6px;font-family:'JetBrains Mono',monospace;letter-spacing:.04em;margin-right:8px;}
+.endpoint-line{display:flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:11px 16px;margin:12px 0;font-family:'JetBrains Mono','Fira Code','Consolas',monospace;font-size:.88rem;color:var(--dark);}
+
+/* Nav breadcrumb */
+.nav-breadcrumb{background:var(--surface);border-bottom:1px solid var(--border);padding:0;}
+.nav-breadcrumb-inner{display:flex;align-items:center;gap:2px;padding:0 28px;}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+
+/* Section anchors */
+.section-anchor{display:block;position:relative;top:-80px;visibility:hidden;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+
+  <!-- Header -->
+  <div class="portal-header">
+    <div class="container portal-header-inner">
+      <div>
+        <span style="color:var(--accent-mid,#4fb3b3);font-size:.75rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px;">Researcher Portal</span>
+        <h1 style="color:#fff;font-size:1.6rem;margin:0;">API 문서</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="color:rgba(255,255,255,.45);font-size:.83rem;">{{ researcher }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub nav -->
+  <div class="nav-breadcrumb">
+    <div class="container nav-breadcrumb-inner">
+      <a href="{{ url_for('portal') }}" class="pnav-btn">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn">전체 세션</a>
+      <a href="{{ url_for('portal_files') }}" class="pnav-btn">파일 관리</a>
+      <a href="{{ url_for('portal_settings') }}" class="pnav-btn">설정</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:36px;padding-bottom:72px;max-width:820px;">
+
+    <!-- Section 1: 개요 -->
+    <div class="doc-section">
+      <a class="section-anchor" id="overview"></a>
+      <div class="doc-section-title">섹션 1</div>
+      <h2>개요</h2>
+      <p>TSL 연구 앱에서 세션 데이터를 서버로 전송하는 REST API입니다. 측정된 변수 데이터를 JSON 형태로 전송하면 프로젝트의 참여자 측정 기록에 자동으로 저장됩니다.</p>
+      <p style="font-size:.82rem;color:var(--muted);margin-bottom:6px;font-weight:600;">Base URL</p>
+      <pre class="code-block"><code>https://[your-domain]/api/sessions</code></pre>
+    </div>
+
+    <!-- Section 2: 인증 -->
+    <div class="doc-section">
+      <a class="section-anchor" id="auth"></a>
+      <div class="doc-section-title">섹션 2</div>
+      <h2>인증</h2>
+      <p>모든 요청에 <span class="inline-code">X-API-Key</span> 헤더를 포함해야 합니다. 아래 API 키를 사용하세요.</p>
+      <div class="apikey-box">
+        <span class="apikey-value" id="apikey-display">{{ api_key }}</span>
+        <button class="copy-btn" id="copy-btn" onclick="copyApiKey()">복사</button>
+      </div>
+      <div class="warning-box">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="#d97706"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/></svg>
+        <span>API 키를 앱 코드에 하드코딩하지 마세요. 환경 변수나 보안 저장소를 사용하세요.</span>
+      </div>
+    </div>
+
+    <!-- Section 3: 엔드포인트 -->
+    <div class="doc-section">
+      <a class="section-anchor" id="endpoint"></a>
+      <div class="doc-section-title">섹션 3</div>
+      <h2>엔드포인트</h2>
+
+      <div class="endpoint-line">
+        <span class="method-badge">POST</span>
+        /api/sessions
+      </div>
+
+      <p style="margin-top:16px;font-size:.85rem;font-weight:700;color:var(--muted);">요청 헤더</p>
+      <table class="doc-table">
+        <thead><tr><th>헤더</th><th>값</th><th>설명</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Content-Type</td>
+            <td><span class="inline-code">application/json</span></td>
+            <td style="font-size:.83rem;color:var(--muted);">필수</td>
+          </tr>
+          <tr>
+            <td>X-API-Key</td>
+            <td><span class="inline-code">{{ api_key }}</span></td>
+            <td style="font-size:.83rem;color:var(--muted);">필수 — 위 API 키 사용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top:20px;font-size:.85rem;font-weight:700;color:var(--muted);">요청 본문 (JSON)</p>
+      <pre class="code-block"><code>{
+  "project_id":     "uuid-string",          <span style="color:#64748b;">// 필수 — 프로젝트 UUID</span>
+  "participant_id": "uuid-string",          <span style="color:#64748b;">// 필수 — 참여자 UUID</span>
+  "phase":          "사전",                 <span style="color:#64748b;">// 선택 — 예: '사전', '사후', '추적'</span>
+  "notes":          "메모 내용",            <span style="color:#64748b;">// 선택 — 자유 텍스트</span>
+  "data": {
+    "variable_name":     42.5,              <span style="color:#64748b;">// 변수명: 숫자값</span>
+    "another_variable":  31.0
+  }
+}</code></pre>
+
+      <p style="margin-top:20px;font-size:.85rem;font-weight:700;color:var(--muted);">응답</p>
+      <p style="font-size:.83rem;color:var(--muted);margin-bottom:6px;">성공 시 <span class="inline-code">200 OK</span></p>
+      <pre class="code-block"><code>{"ok": true, "id": "새로 생성된 세션 ID"}</code></pre>
+      <p style="font-size:.83rem;color:var(--muted);margin:12px 0 6px;">오류 시</p>
+      <pre class="code-block"><code>{"error": "오류 메시지"}</code></pre>
+    </div>
+
+    <!-- Section 4: 코드 예시 -->
+    <div class="doc-section">
+      <a class="section-anchor" id="examples"></a>
+      <div class="doc-section-title">섹션 4</div>
+      <h2>코드 예시</h2>
+
+      <!-- Tab switcher -->
+      <div style="display:flex;gap:6px;margin-bottom:4px;" role="tablist">
+        <button class="lang-tab active" onclick="switchTab('python')" id="tab-python"
+                style="font-size:.78rem;font-weight:600;padding:6px 14px;border-radius:7px;border:1.5px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;transition:all .15s;">Python</button>
+        <button class="lang-tab" onclick="switchTab('swift')" id="tab-swift"
+                style="font-size:.78rem;font-weight:600;padding:6px 14px;border-radius:7px;border:1.5px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;transition:all .15s;">Swift</button>
+      </div>
+
+      <!-- Python example -->
+      <div id="example-python">
+        <pre class="code-block"><code><span style="color:#94a3b8;">import</span> requests
+
+API_KEY    = <span style="color:#fbbf24;">"{{ api_key }}"</span>
+BASE_URL   = <span style="color:#fbbf24;">"https://[your-domain]/api/sessions"</span>
+
+payload = {
+    <span style="color:#fbbf24;">"project_id"</span>:     <span style="color:#fbbf24;">"your-project-uuid"</span>,
+    <span style="color:#fbbf24;">"participant_id"</span>: <span style="color:#fbbf24;">"your-participant-uuid"</span>,
+    <span style="color:#fbbf24;">"phase"</span>:          <span style="color:#fbbf24;">"사전"</span>,
+    <span style="color:#fbbf24;">"notes"</span>:          <span style="color:#fbbf24;">"첫 번째 측정"</span>,
+    <span style="color:#fbbf24;">"data"</span>: {
+        <span style="color:#fbbf24;">"hrv"</span>: 42.5,
+        <span style="color:#fbbf24;">"stress_score"</span>: 31.0,
+    }
+}
+
+response = requests.post(
+    BASE_URL,
+    json=payload,
+    headers={
+        <span style="color:#fbbf24;">"X-API-Key"</span>: API_KEY,
+        <span style="color:#fbbf24;">"Content-Type"</span>: <span style="color:#fbbf24;">"application/json"</span>,
+    }
+)
+
+<span style="color:#94a3b8;">if</span> response.status_code == <span style="color:#a3e635;">200</span>:
+    data = response.json()
+    <span style="color:#94a3b8;">print</span>(<span style="color:#fbbf24;">f"저장 완료 — 세션 ID: {data['id']}"</span>)
+<span style="color:#94a3b8;">else</span>:
+    <span style="color:#94a3b8;">print</span>(<span style="color:#fbbf24;">f"오류: {response.json().get('error')}"</span>)</code></pre>
+      </div>
+
+      <!-- Swift example -->
+      <div id="example-swift" style="display:none;">
+        <pre class="code-block"><code><span style="color:#94a3b8;">import</span> Foundation
+
+<span style="color:#94a3b8;">let</span> apiKey  = <span style="color:#fbbf24;">"{{ api_key }}"</span>
+<span style="color:#94a3b8;">let</span> baseURL = URL(string: <span style="color:#fbbf24;">"https://[your-domain]/api/sessions"</span>)!
+
+<span style="color:#94a3b8;">var</span> request = URLRequest(url: baseURL)
+request.httpMethod = <span style="color:#fbbf24;">"POST"</span>
+request.setValue(<span style="color:#fbbf24;">"application/json"</span>, forHTTPHeaderField: <span style="color:#fbbf24;">"Content-Type"</span>)
+request.setValue(apiKey,            forHTTPHeaderField: <span style="color:#fbbf24;">"X-API-Key"</span>)
+
+<span style="color:#94a3b8;">let</span> body: [String: Any] = [
+    <span style="color:#fbbf24;">"project_id"</span>:     <span style="color:#fbbf24;">"your-project-uuid"</span>,
+    <span style="color:#fbbf24;">"participant_id"</span>: <span style="color:#fbbf24;">"your-participant-uuid"</span>,
+    <span style="color:#fbbf24;">"phase"</span>:          <span style="color:#fbbf24;">"사전"</span>,
+    <span style="color:#fbbf24;">"data"</span>: [<span style="color:#fbbf24;">"hrv"</span>: 42.5, <span style="color:#fbbf24;">"stress_score"</span>: 31.0]
+]
+request.httpBody = <span style="color:#94a3b8;">try?</span> JSONSerialization.data(withJSONObject: body)
+
+URLSession.shared.dataTask(with: request) { data, response, error <span style="color:#94a3b8;">in</span>
+    <span style="color:#94a3b8;">guard let</span> data = data,
+          <span style="color:#94a3b8;">let</span> json = <span style="color:#94a3b8;">try?</span> JSONSerialization.jsonObject(with: data) <span style="color:#94a3b8;">as?</span> [String: Any]
+    <span style="color:#94a3b8;">else</span> { <span style="color:#94a3b8;">return</span> }
+    <span style="color:#94a3b8;">if let</span> id = json[<span style="color:#fbbf24;">"id"</span>] <span style="color:#94a3b8;">as?</span> String {
+        print(<span style="color:#fbbf24;">"저장 완료 — 세션 ID: \(id)"</span>)
+    }
+}.resume()</code></pre>
+      </div>
+    </div>
+
+    <!-- Section 5: 변수 확인 -->
+    <div class="doc-section">
+      <a class="section-anchor" id="variables"></a>
+      <div class="doc-section-title">섹션 5</div>
+      <h2>변수 확인</h2>
+      <p><span class="inline-code">data</span> 객체의 키는 프로젝트에 등록된 변수명과 정확히 일치해야 합니다. 변수명은 프로젝트 설정 페이지에서 확인할 수 있어요.</p>
+      <a href="{{ url_for('portal') }}" class="btn btn-outline" style="font-size:.85rem;margin-top:4px;display:inline-block;">프로젝트 목록 보기 →</a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyApiKey() {
+  const key = document.getElementById('apikey-display').textContent.trim();
+  navigator.clipboard.writeText(key).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '복사됨!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = '복사';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {
+    /* fallback for older browsers */
+    const ta = document.createElement('textarea');
+    ta.value = key;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '복사됨!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '복사'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function switchTab(lang) {
+  ['python','swift'].forEach(l => {
+    const ex  = document.getElementById('example-' + l);
+    const tab = document.getElementById('tab-' + l);
+    if (l === lang) {
+      ex.style.display = '';
+      tab.style.background = 'var(--accent)';
+      tab.style.color = '#fff';
+      tab.style.borderColor = 'var(--accent)';
+    } else {
+      ex.style.display = 'none';
+      tab.style.background = 'var(--surface)';
+      tab.style.color = 'var(--muted)';
+      tab.style.borderColor = 'var(--border)';
+    }
+  });
+}
+</script>
+{% endblock %}

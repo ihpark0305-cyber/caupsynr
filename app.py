@@ -125,6 +125,14 @@ def init_db():
                 summary TEXT,
                 detail TEXT
             );
+            CREATE TABLE IF NOT EXISTS contact_messages (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                email TEXT,
+                subject TEXT,
+                message TEXT NOT NULL,
+                created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
         ''')
         # Seed default accounts if table is empty
         existing = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
@@ -477,7 +485,22 @@ def home():
 
 @app.route("/research")
 def research():
-    return render_template("research.html", research_topics=RESEARCH_TOPICS)
+    extras = {}
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            for row in conn.execute("SELECT * FROM research_topics_extra").fetchall():
+                extras[row['key']] = dict(row)
+    except: pass
+    merged = []
+    for r in RESEARCH_TOPICS:
+        t = dict(r)
+        if t['key'] in extras:
+            ex = extras[t['key']]
+            if ex.get('summary'): t['summary'] = ex['summary']
+            if ex.get('detail'):  t['detail']  = ex['detail']
+        merged.append(t)
+    return render_template("research.html", research_topics=merged, is_researcher='researcher' in session)
 
 @app.route("/team")
 def team():
@@ -554,9 +577,23 @@ def app_detail(key):
 
 @app.route("/contact", methods=["GET","POST"])
 def contact():
-    sent = False
-    if request.method == "POST": sent = True
-    return render_template("contact.html", message_sent=sent)
+    success = False
+    if request.method == "POST":
+        name    = request.form.get("name","").strip()
+        email   = request.form.get("email","").strip()
+        subject = request.form.get("subject","").strip()
+        message = request.form.get("message","").strip()
+        if message:
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute(
+                    "INSERT INTO contact_messages (id,name,email,subject,message) VALUES (?,?,?,?,?)",
+                    (str(_uuid.uuid4()), name, email, subject, message)
+                )
+                conn.commit()
+            success = True
+        else:
+            flash("메시지를 입력해주세요.")
+    return render_template("contact.html", success=success)
 
 @app.route("/gallery")
 def gallery():
@@ -1064,6 +1101,17 @@ def portal_project_tests(project_id):
                     except: pass
 
             grp_list = list(grp_vals.keys())
+
+            # Normality tests (Shapiro-Wilk per group)
+            normality = {}
+            for grp, vals in grp_vals.items():
+                if 3 <= len(vals) <= 5000:
+                    try:
+                        sw_stat, sw_p = _scipy_stats.shapiro(vals)
+                        normality[grp] = {"stat": round(float(sw_stat),4), "p": round(float(sw_p),4), "normal": sw_p >= 0.05}
+                    except: pass
+            vres["normality"] = normality
+
             for i in range(len(grp_list)):
                 for j in range(i+1, len(grp_list)):
                     g1, g2 = grp_list[i], grp_list[j]
@@ -1076,6 +1124,20 @@ def portal_project_tests(project_id):
                         pooled_n = len(a)+len(b)
                         pooled_sd = _np.sqrt(((len(a)-1)*_np.var(a,ddof=1) + (len(b)-1)*_np.var(b,ddof=1)) / (pooled_n-2)) if pooled_n > 2 else 0
                         cohens_d = ((_np.mean(a) - _np.mean(b)) / pooled_sd) if pooled_sd > 0 else 0
+                        # Bootstrap 95% CI for Cohen's d
+                        d_ci = None
+                        try:
+                            n_boot = 1000
+                            boot_d = []
+                            rng = _np.random.default_rng(42)
+                            for _ in range(n_boot):
+                                ba = rng.choice(a, size=len(a), replace=True)
+                                bb = rng.choice(b, size=len(b), replace=True)
+                                ps = float(_np.sqrt(((len(ba)-1)*_np.var(ba,ddof=1) + (len(bb)-1)*_np.var(bb,ddof=1)) / (len(ba)+len(bb)-2)))
+                                if ps > 0: boot_d.append((float(_np.mean(ba))-float(_np.mean(bb)))/ps)
+                            if boot_d:
+                                d_ci = [round(float(_np.percentile(boot_d,2.5)),3), round(float(_np.percentile(boot_d,97.5)),3)]
+                        except: pass
                         # Rank-biserial r for Mann-Whitney
                         r_rb = 1 - 2*u_stat / (len(a)*len(b))
                         vres["tests"].append({
@@ -1087,9 +1149,32 @@ def portal_project_tests(project_id):
                             "U": round(float(u_stat),1), "u_p": round(float(u_p),4),
                             "d": round(float(cohens_d),3), "r": round(float(r_rb),3),
                             "t_sig": t_p < 0.05, "u_sig": u_p < 0.05,
+                            "d_ci": d_ci,
                         })
                     except Exception as e:
                         print(f"test error {vn} {g1} vs {g2}: {e}")
+
+            # ANOVA / Kruskal-Wallis for 3+ groups
+            if len(grp_list) >= 3:
+                all_groups_data = [grp_vals[g] for g in grp_list if len(grp_vals[g]) >= 2]
+                if len(all_groups_data) >= 3:
+                    try:
+                        f_stat, f_p = _scipy_stats.f_oneway(*all_groups_data)
+                        h_stat, h_p = _scipy_stats.kruskal(*all_groups_data)
+                        # Eta-squared
+                        grand = [v for g in all_groups_data for v in g]
+                        grand_mean = float(_np.mean(grand))
+                        ss_between = sum(len(g)*(float(_np.mean(g))-grand_mean)**2 for g in all_groups_data)
+                        ss_total = sum((v-grand_mean)**2 for v in grand)
+                        eta2 = round(ss_between/ss_total, 3) if ss_total > 0 else 0
+                        vres["anova"] = {
+                            "groups": grp_list,
+                            "F": round(float(f_stat),3), "f_p": round(float(f_p),4), "f_sig": f_p < 0.05,
+                            "H": round(float(h_stat),3), "h_p": round(float(h_p),4), "h_sig": h_p < 0.05,
+                            "eta2": eta2,
+                        }
+                    except Exception as e:
+                        print(f"anova error {vn}: {e}")
 
             # --- Paired t-test (pre vs post within same participant) ---
             if len(phases) >= 2:
@@ -1144,7 +1229,7 @@ def portal_project_tests(project_id):
             for i in range(n_vars):
                 for j in range(n_vars):
                     if i == j:
-                        matrix[i][j] = 1.0
+                        matrix[i][j] = {"r": 1.0, "p": 0.0, "sig": False}
                     else:
                         # Get paired values (rows where both have data)
                         pairs = []
@@ -1160,7 +1245,7 @@ def portal_project_tests(project_id):
                             ys = [p[1] for p in pairs]
                             try:
                                 r, p_val = _scipy_stats.pearsonr(xs, ys)
-                                matrix[i][j] = round(float(r), 3)
+                                matrix[i][j] = {"r": round(float(r), 3), "p": round(float(p_val), 4), "sig": p_val < 0.05}
                             except: matrix[i][j] = None
             corr_matrix = matrix
 
@@ -1531,6 +1616,33 @@ def portal_news_delete(news_id):
 def api_docs():
     api_key = os.getenv("APP_API_KEY","tsl-app-key-2025")
     return render_template("api_docs.html", researcher=session["researcher"], api_key=api_key)
+
+# ── Research topic inline edit ────────────────────────
+@app.route("/portal/research/<key>/edit", methods=["POST"])
+@login_required
+def portal_research_edit(key):
+    summary = request.form.get("summary","").strip()
+    detail  = request.form.get("detail","").strip()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO research_topics_extra (key,summary,detail) VALUES (?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET summary=excluded.summary, detail=excluded.detail",
+            (key, summary, detail)
+        )
+        conn.commit()
+    flash("연구 소개가 수정됐어요.")
+    return redirect(url_for("research") + f"#{key}")
+
+# ── Contact messages inbox ────────────────────────────
+@app.route("/portal/contacts")
+@login_required
+def portal_contacts():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        msgs = [dict(r) for r in conn.execute(
+            "SELECT * FROM contact_messages ORDER BY created_at DESC"
+        ).fetchall()]
+    return render_template("portal_contacts.html", messages=msgs, researcher=session["researcher"])
 
 if __name__ == "__main__":
     app.run(debug=False)

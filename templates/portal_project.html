@@ -41,6 +41,11 @@
       </div>
       <div style="display:flex;gap:10px;">
         <a href="{{ url_for('portal_project_export', project_id=project.id) }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">CSV ↓</a>
+        <a href="{{ url_for('portal_project_export_excel', project_id=project.id) }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">Excel ↓</a>
+        <button onclick="document.getElementById('edit-project-modal').classList.add('open')" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">✏️ 편집</button>
+        <form action="{{ url_for('portal_project_clone', project_id=project.id) }}" method="POST" onsubmit="return confirm('이 프로젝트를 복사할까요? (변수 설정만 복사, 데이터 제외)')">
+          <button type="submit" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">📋 복사</button>
+        </form>
         <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
       </div>
     </div>
@@ -90,18 +95,24 @@
 
     <!-- ── 참여자 탭 ── -->
     <div id="tab-participants" class="tab-content">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+        <form action="{{ url_for('portal_participants_bulk_group', project_id=project.id) }}" method="POST" style="display:flex;gap:8px;align-items:center;" id="bulk-group-form">
+          <span style="font-size:.82rem;color:var(--muted);">선택된 참여자</span>
+          <input type="text" name="group_name" placeholder="그룹명 입력" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:140px;">
+          <button type="submit" class="btn btn-outline" style="font-size:.83rem;">그룹 일괄 변경</button>
+        </form>
         <button class="btn btn-primary" onclick="document.getElementById('add-participant-modal').classList.add('open')" style="font-size:.85rem;">+ 참여자 추가</button>
       </div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
         {% if participants %}
         <table class="data-table">
           <thead><tr>
-            <th>코드</th><th>성별</th><th>나이</th><th>그룹</th><th>등록일</th><th>측정 수</th><th></th>
+            <th></th><th>코드</th><th>성별</th><th>나이</th><th>그룹</th><th>등록일</th><th>측정 수</th><th></th>
           </tr></thead>
           <tbody>
           {% for p in participants %}
           <tr>
+            <td style="width:32px;"><input type="checkbox" name="participant_ids" value="{{ p.id }}" form="bulk-group-form" style="cursor:pointer;"></td>
             <td style="font-weight:700;color:var(--accent);"><a href="{{ url_for('portal_participant_detail', project_id=project.id, participant_id=p.id) }}" style="color:var(--accent);text-decoration:none;">{{ p.code }}</a></td>
             <td>{{ p.gender or '—' }}</td>
             <td>{{ p.age or '—' }}</td>
@@ -141,6 +152,9 @@
               {{ m.data | tojson if m.data else '—' }}
             </td>
             <td style="color:var(--muted);">{{ (m.notes or '—')[:30] }}</td>
+            <td>
+              <button onclick="openEditMeasurement('{{ m.id }}','{{ m.phase or '' }}','{{ m.notes or '' }}',{{ m.data | tojson if m.data else '{}' }})" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;cursor:pointer;margin-right:4px;">편집</button>
+            </td>
             <td>
               <form action="{{ url_for('portal_measurement_toggle_exclude', project_id=project.id, m_id=m.id) }}" method="POST">
                 <button type="submit" title="{{ '포함' if m.excluded else '제외' }}" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid {% if m.excluded %}var(--accent){% else %}#e74c3c{% endif %};color:{% if m.excluded %}var(--accent){% else %}#e74c3c{% endif %};border-radius:8px;cursor:pointer;">
@@ -281,6 +295,31 @@
   </div>
 </div>
 
+<!-- 프로젝트 편집 모달 -->
+<div class="modal-overlay" id="edit-project-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>프로젝트 편집</h3>
+    <form action="{{ url_for('portal_project_edit', project_id=project.id) }}" method="POST">
+      <div class="form-group">
+        <label>프로젝트 이름 *</label>
+        <input type="text" name="name" value="{{ project.name }}" required>
+      </div>
+      <div class="form-group">
+        <label>연구 앱</label>
+        <input type="text" name="app_type" value="{{ project.app_type or '' }}" placeholder="PLS / TLS / Mind Therapy">
+      </div>
+      <div class="form-group">
+        <label>프로젝트 설명</label>
+        <textarea name="description" style="min-height:80px;">{{ project.description or '' }}</textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('edit-project-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- 참여자 추가 모달 -->
 <div class="modal-overlay" id="add-participant-modal" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="modal-box">
@@ -311,6 +350,40 @@
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
         <button type="button" class="btn btn-outline" onclick="document.getElementById('add-participant-modal').classList.remove('open')">취소</button>
         <button type="submit" class="btn btn-primary">추가</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- 측정 데이터 편집 모달 -->
+<div class="modal-overlay" id="edit-measurement-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <h3>측정 데이터 편집</h3>
+    <form id="edit-measurement-form" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>회차/시점</label>
+          <input type="text" name="phase" id="edit-m-phase" placeholder="사전 / 사후 / 1회차">
+        </div>
+      </div>
+      <div id="edit-m-vars" style="background:var(--bg);border-radius:var(--radius);padding:16px;margin:14px 0;">
+        <p style="font-size:.78rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px;">측정값</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          {% for v in variables %}
+          <div class="form-group" style="margin:0;">
+            <label style="font-size:.8rem;">{{ v.label or v.name }}{% if v.unit %} ({{ v.unit }}){% endif %}</label>
+            <input type="{% if v.var_type == 'number' %}number" step="any{% else %}text{% endif %}" name="var_{{ v.name }}" id="edit-m-var-{{ v.name }}" placeholder="—">
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="form-group">
+        <label>메모</label>
+        <textarea name="notes" id="edit-m-notes" style="min-height:60px;"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('edit-measurement-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
       </div>
     </form>
   </div>
@@ -620,6 +693,21 @@ function updateRadar() {
       scales: { r: { beginAtZero: false } }
     }
   });
+}
+
+function openEditMeasurement(id, phase, notes, data) {
+  document.getElementById('edit-m-phase').value = phase;
+  document.getElementById('edit-m-notes').value = notes;
+  // Fill variable fields
+  if (data && typeof data === 'object') {
+    Object.entries(data).forEach(([k, v]) => {
+      const el = document.getElementById('edit-m-var-' + k);
+      if (el) el.value = v;
+    });
+  }
+  document.getElementById('edit-measurement-form').action =
+    `/portal/projects/{{ project.id }}/measurements/${id}/edit`;
+  document.getElementById('edit-measurement-modal').classList.add('open');
 }
 
 function openEditVar(id, name, label, varType, unit) {

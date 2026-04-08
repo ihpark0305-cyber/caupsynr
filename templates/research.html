@@ -118,6 +118,14 @@
           <p style="font-size:.83rem;font-weight:600;color:var(--muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.07em;">Lab Equipment</p>
           <p style="font-size:.9rem;color:var(--text);">Our lab uses <strong>NeuroHarmonyS</strong> and <strong>OMNIFIT BRAIN</strong> EEG headsets for real-time brainwave measurement and neurofeedback research.</p>
         </div>
+        {% if is_researcher %}<div class="rt-edit-wrap">
+          <button class="rt-edit-btn" onclick="toggleRtEdit('brainwave',this)">✏️ 요약 수정</button>
+          <form class="rt-edit-form" id="rtedit-brainwave" action="{{ url_for('portal_research_edit', key='brainwave') }}" method="POST">
+            <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px;">요약 (카드에 표시)</label>
+            <textarea name="summary" rows="2" style="width:100%;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:.85rem;margin-bottom:8px;resize:vertical;">{{ research_topics | selectattr('key','eq','brainwave') | map(attribute='summary') | first | default('') }}</textarea>
+            <div style="display:flex;gap:8px;"><button type="submit" class="btn btn-primary" style="font-size:.8rem;padding:6px 14px;">저장</button><button type="button" onclick="toggleRtEdit('brainwave',null)" class="btn btn-outline" style="font-size:.8rem;padding:6px 14px;">취소</button></div>
+          </form>
+        </div>{% endif %}
       </div>
     </div>
 
@@ -151,6 +159,14 @@
             <div style="display:flex;align-items:center;gap:10px;font-size:.88rem;"><span style="color:var(--accent);font-weight:700;">●</span> Chemical disaster nursing education</div>
           </div>
         </div>
+        {% if is_researcher %}<div class="rt-edit-wrap">
+          <button class="rt-edit-btn" onclick="toggleRtEdit('simulation',this)">✏️ 요약 수정</button>
+          <form class="rt-edit-form" id="rtedit-simulation" action="{{ url_for('portal_research_edit', key='simulation') }}" method="POST">
+            <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px;">요약 (카드에 표시)</label>
+            <textarea name="summary" rows="2" style="width:100%;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:.85rem;margin-bottom:8px;resize:vertical;">{{ research_topics | selectattr('key','eq','simulation') | map(attribute='summary') | first | default('') }}</textarea>
+            <div style="display:flex;gap:8px;"><button type="submit" class="btn btn-primary" style="font-size:.8rem;padding:6px 14px;">저장</button><button type="button" onclick="toggleRtEdit('simulation',null)" class="btn btn-outline" style="font-size:.8rem;padding:6px 14px;">취소</button></div>
+          </form>
+        </div>{% endif %}
       </div>
     </div>
 
@@ -170,6 +186,14 @@
           <div class="freq-row"><span>Brain perceives</span><span class="freq-result">10 Hz (Alpha wave)</span></div>
         </div>
         <p>Binaural beats require headphones or stereo speakers positioned close to both ears. Our lab integrates binaural beat technology into mobile apps, particularly the <strong>Mind Therapy</strong> app, combined with neurofeedback for stress and PTSD management.</p>
+        {% if is_researcher %}<div class="rt-edit-wrap">
+          <button class="rt-edit-btn" onclick="toggleRtEdit('binaural',this)">✏️ 요약 수정</button>
+          <form class="rt-edit-form" id="rtedit-binaural" action="{{ url_for('portal_research_edit', key='binaural') }}" method="POST">
+            <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px;">요약 (카드에 표시)</label>
+            <textarea name="summary" rows="2" style="width:100%;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:.85rem;margin-bottom:8px;resize:vertical;">{{ research_topics | selectattr('key','eq','binaural') | map(attribute='summary') | first | default('') }}</textarea>
+            <div style="display:flex;gap:8px;"><button type="submit" class="btn btn-primary" style="font-size:.8rem;padding:6px 14px;">저장</button><button type="button" onclick="toggleRtEdit('binaural',null)" class="btn btn-outline" style="font-size:.8rem;padding:6px 14px;">취소</button></div>
+          </form>
+        </div>{% endif %}
       </div>
     </div>
 
@@ -197,6 +221,14 @@
           </div>
         </div>
         <a href="{{ url_for('apps') }}" class="btn btn-outline" style="margin-top:20px;">Download Apps →</a>
+        {% if is_researcher %}<div class="rt-edit-wrap">
+          <button class="rt-edit-btn" onclick="toggleRtEdit('app',this)">✏️ 요약 수정</button>
+          <form class="rt-edit-form" id="rtedit-app" action="{{ url_for('portal_research_edit', key='app') }}" method="POST">
+            <label style="font-size:.75rem;color:var(--muted);display:block;margin-bottom:4px;">요약 (카드에 표시)</label>
+            <textarea name="summary" rows="2" style="width:100%;padding:8px;background:var(--surface);border:1px solid var(--border);border-radius:6px;font-size:.85rem;margin-bottom:8px;resize:vertical;">{{ research_topics | selectattr('key','eq','app') | map(attribute='summary') | first | default('') }}</textarea>
+            <div style="display:flex;gap:8px;"><button type="submit" class="btn btn-primary" style="font-size:.8rem;padding:6px 14px;">저장</button><button type="button" onclick="toggleRtEdit('app',null)" class="btn btn-outline" style="font-size:.8rem;padding:6px 14px;">취소</button></div>
+          </form>
+        </div>{% endif %}
       </div>
     </div>
 
@@ -205,8 +237,24 @@
 
 {% endblock %}
 
+{% block head %}
+<style>
+.rt-edit-wrap{margin-top:16px;padding-top:14px;border-top:1px dashed var(--border);}
+.rt-edit-btn{font-size:.75rem;padding:4px 12px;background:rgba(15,107,107,.12);border:1px solid var(--accent);color:var(--accent);border-radius:8px;cursor:pointer;}
+.rt-edit-form{display:none;margin-top:10px;}
+</style>
+{% endblock %}
+
 {% block scripts %}
 <script>
+function toggleRtEdit(key, btn) {
+  const form = document.getElementById('rtedit-' + key);
+  if (!form) return;
+  const open = form.style.display === 'block';
+  form.style.display = open ? 'none' : 'block';
+  if (btn) btn.style.display = open ? 'inline-block' : 'none';
+}
+
 const panes = document.querySelectorAll('.research-detail');
 
 // activate from URL param on load

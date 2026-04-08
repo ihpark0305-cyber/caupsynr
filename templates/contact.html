@@ -68,15 +68,29 @@
       <!-- Form -->
       <div class="contact-form">
         <h3>Send a message</h3>
-        <form action="/contact" method="POST">
+        {% if success %}
+        <div style="padding:24px;background:var(--accent-light);border:1px solid var(--accent);border-radius:var(--radius-lg);text-align:center;">
+          <div style="font-size:2rem;margin-bottom:10px;">✓</div>
+          <p style="font-weight:700;color:var(--accent);font-size:1rem;margin-bottom:6px;">문의가 접수됐습니다.</p>
+          <p style="color:var(--muted);font-size:.88rem;">빠른 시일 내에 답변 드리겠습니다.</p>
+        </div>
+        {% else %}
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div style="margin-bottom:16px;padding:10px 14px;background:#fee2e2;border-radius:8px;color:#991b1b;font-size:.88rem;">
+          {% for m in messages %}{{ m }}{% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        <form action="{{ url_for('contact') }}" method="POST">
           <div class="grid-2">
             <div class="form-group">
               <label for="name">Name</label>
-              <input type="text" id="name" name="name" placeholder="Your name" required>
+              <input type="text" id="name" name="name" placeholder="Your name">
             </div>
             <div class="form-group">
               <label for="email">Email</label>
-              <input type="email" id="email" name="email" placeholder="your@email.com" required>
+              <input type="email" id="email" name="email" placeholder="your@email.com">
             </div>
           </div>
           <div class="form-group">
@@ -84,15 +98,11 @@
             <input type="text" id="subject" name="subject" placeholder="What is this about?">
           </div>
           <div class="form-group">
-            <label for="message">Message</label>
+            <label for="message">Message *</label>
             <textarea id="message" name="message" placeholder="Your message…" required></textarea>
           </div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Send Message</button>
         </form>
-        {% if message_sent %}
-        <div style="margin-top:14px;padding:12px 16px;background:var(--accent-light);border-radius:8px;color:var(--accent);font-size:.88rem;font-weight:600;">
-          ✓ Message sent! We'll get back to you soon.
-        </div>
         {% endif %}
       </div>
 

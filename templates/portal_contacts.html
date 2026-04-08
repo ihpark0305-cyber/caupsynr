@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}문의 수신함 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:28px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.portal-header-inner{display:flex;justify-content:space-between;align-items:center;}
+.portal-nav{background:var(--surface);border-bottom:1px solid var(--border);}
+.portal-nav-inner{display:flex;align-items:center;gap:2px;padding:0 28px;}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.msg-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:14px;transition:box-shadow .2s;}
+.msg-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.07);}
+.msg-subject{font-family:'Nunito',sans-serif;font-size:1rem;font-weight:700;color:var(--dark);margin-bottom:6px;}
+.msg-meta{font-size:.78rem;color:var(--muted);margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;}
+.msg-body{font-size:.9rem;color:var(--text);line-height:1.7;white-space:pre-wrap;}
+.msg-email-link{color:var(--accent);text-decoration:none;}
+.msg-email-link:hover{text-decoration:underline;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container portal-header-inner">
+      <div>
+        <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:4px;">Researcher Portal</span>
+        <h1 style="color:#fff;font-size:1.6rem;margin:0;">문의 수신함</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="color:rgba(255,255,255,.45);font-size:.83rem;">{{ researcher }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="portal-nav">
+    <div class="container portal-nav-inner">
+      <a href="{{ url_for('portal') }}" class="pnav-btn">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn">전체 세션</a>
+      <a href="{{ url_for('portal_files') }}" class="pnav-btn">파일 관리</a>
+      <a href="{{ url_for('portal_news') }}" class="pnav-btn">📣 공지 관리</a>
+      <a href="{{ url_for('portal_contacts') }}" class="pnav-btn active">✉ 문의 수신함</a>
+      <a href="{{ url_for('portal_settings') }}" class="pnav-btn">설정</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:32px;padding-bottom:60px;">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <span style="font-size:.85rem;color:var(--muted);">총 <strong style="color:var(--dark);">{{ messages|length }}</strong>건</span>
+    </div>
+
+    {% if messages %}
+      {% for m in messages %}
+      <div class="msg-card">
+        <div class="msg-subject">{{ m.subject or '(제목 없음)' }}</div>
+        <div class="msg-meta">
+          <span>👤 {{ m.name or '익명' }}</span>
+          {% if m.email %}
+          <span>✉ <a href="mailto:{{ m.email }}" class="msg-email-link">{{ m.email }}</a></span>
+          {% endif %}
+          <span>🕒 {{ m.created_at[:16].replace('T',' ') }}</span>
+        </div>
+        <div class="msg-body">{{ m.message }}</div>
+        {% if m.email %}
+        <div style="margin-top:14px;">
+          <a href="mailto:{{ m.email }}?subject=Re: {{ m.subject or '' }}" class="btn btn-outline" style="font-size:.78rem;padding:5px 14px;">↩ 답장</a>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:60px;text-align:center;color:var(--muted);">
+      <div style="font-size:3rem;margin-bottom:12px;">✉</div>
+      <p>아직 수신된 문의가 없어요.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

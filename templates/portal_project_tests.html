@@ -116,6 +116,7 @@
                   <th>U</th>
                   <th>p (MW)</th>
                   <th>Cohen's d</th>
+                  <th>d 95% CI</th>
                   <th>효과크기</th>
                 </tr>
               </thead>
@@ -185,6 +186,11 @@
                   <!-- Cohen's d -->
                   <td>{{ "%.3f"|format(row.d) if row.d is not none else '—' }}</td>
 
+                  <!-- d 95% CI -->
+                  <td style="font-size:.76rem;color:var(--muted);">
+                    {% if row.d_ci %}[{{ row.d_ci[0] }}, {{ row.d_ci[1] }}]{% else %}—{% endif %}
+                  </td>
+
                   <!-- 효과크기 badge -->
                   <td>
                     {% if row.d is not none %}
@@ -208,6 +214,47 @@
           {% else %}
           <div class="empty-state">그룹이 1개이거나 데이터가 부족합니다.</div>
           {% endif %}
+
+          {% if vdata.normality %}
+          <div style="padding:14px 20px;border-top:1px solid var(--border-light);">
+            <p style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">정규성 검정 (Shapiro-Wilk)</p>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">
+              {% for grp, norm in vdata.normality.items() %}
+              <div style="background:var(--bg);border-radius:8px;padding:7px 12px;font-size:.8rem;border:1px solid var(--border);">
+                <span style="font-weight:600;color:var(--dark);">{{ grp }}</span>
+                <span style="color:var(--muted);margin:0 6px;">W={{ norm.stat }}, p={{ norm.p }}</span>
+                {% if norm.normal %}
+                <span class="sig-badge sig-yes">정규분포 충족</span>
+                {% else %}
+                <span style="display:inline-block;font-size:.72rem;padding:2px 7px;border-radius:100px;font-weight:600;background:#fee2e2;color:#991b1b;">비정규분포</span>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+
+          {% if vdata.anova %}
+          <div style="padding:14px 20px;border-top:1px solid var(--border-light);">
+            <p style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">전체 그룹 검정 (3+ 그룹)</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+              <div style="background:var(--bg);border-radius:8px;padding:7px 14px;font-size:.82rem;border:1px solid var(--border);">
+                <span style="color:var(--muted);">One-way ANOVA</span>
+                <span style="margin:0 8px;font-weight:700;color:var(--dark);">F={{ vdata.anova.F }}</span>
+                <span style="color:var(--muted);margin-right:8px;">p={{ vdata.anova.f_p }}</span>
+                <span class="sig-badge {% if vdata.anova.f_sig %}sig-yes{% else %}sig-no{% endif %}">{% if vdata.anova.f_sig %}유의*{% else %}n.s.{% endif %}</span>
+              </div>
+              <div style="background:var(--bg);border-radius:8px;padding:7px 14px;font-size:.82rem;border:1px solid var(--border);">
+                <span style="color:var(--muted);">Kruskal-Wallis</span>
+                <span style="margin:0 8px;font-weight:700;color:var(--dark);">H={{ vdata.anova.H }}</span>
+                <span style="color:var(--muted);margin-right:8px;">p={{ vdata.anova.h_p }}</span>
+                <span class="sig-badge {% if vdata.anova.h_sig %}sig-yes{% else %}sig-no{% endif %}">{% if vdata.anova.h_sig %}유의*{% else %}n.s.{% endif %}</span>
+              </div>
+              <div style="font-size:.82rem;color:var(--muted);">η² = <strong style="color:var(--dark);">{{ vdata.anova.eta2 }}</strong></div>
+            </div>
+          </div>
+          {% endif %}
+
         </div>
         {% endfor %}
       {% else %}
@@ -351,20 +398,23 @@
               </tr>
             </thead>
             <tbody>
-              {% for i, row_label in enumerate(corr_labels) %}
+              {% for i in range(corr_labels|length) %}
               <tr>
-                <th style="text-align:left;white-space:nowrap;">{{ row_label }}</th>
-                {% for j, r_val in enumerate(corr_matrix[i]) %}
+                <th style="text-align:left;white-space:nowrap;">{{ corr_labels[i] }}</th>
+                {% for j in range(corr_labels|length) %}
+                {% set cell = corr_matrix[i][j] %}
                 <td
-                  data-r="{{ r_val }}"
+                  data-r="{{ cell.r if cell else '' }}"
                   {% if i == j %}data-diag="1"{% endif %}>
                   {% if i == j %}
                     <span style="color:var(--muted);">—</span>
-                  {% else %}
-                    <span class="corr-val"
-                          {% if r_val|abs >= 0.05 %}style="font-weight:700;"{% endif %}>
-                      {{ "%.2f"|format(r_val) }}{% if r_val|abs >= 0.05 %}*{% endif %}
+                  {% elif cell %}
+                    <span class="corr-val" {% if cell.r|abs >= 0.3 %}style="font-weight:700;"{% endif %}>
+                      {{ "%.2f"|format(cell.r) }}{% if cell.sig %}*{% endif %}
                     </span>
+                    <br><span style="font-size:.68rem;color:var(--muted);">p={{ cell.p }}</span>
+                  {% else %}
+                    <span style="color:var(--muted);">—</span>
                   {% endif %}
                 </td>
                 {% endfor %}
