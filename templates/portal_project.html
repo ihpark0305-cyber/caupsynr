@@ -42,6 +42,7 @@
       <div style="display:flex;gap:10px;">
         <a href="{{ url_for('portal_project_export', project_id=project.id) }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">CSV ↓</a>
         <a href="{{ url_for('portal_project_export_excel', project_id=project.id) }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">Excel ↓</a>
+        <button onclick="document.getElementById('range-export-modal').classList.add('open')" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">🔍 범위 추출</button>
         <button onclick="document.getElementById('edit-project-modal').classList.add('open')" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">✏️ 편집</button>
         <form action="{{ url_for('portal_project_clone', project_id=project.id) }}" method="POST" onsubmit="return confirm('이 프로젝트를 복사할까요? (변수 설정만 복사, 데이터 제외)')">
           <button type="submit" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">📋 복사</button>
@@ -95,7 +96,29 @@
 
     <!-- ── 참여자 탭 ── -->
     <div id="tab-participants" class="tab-content">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+      <!-- 필터 바 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <input type="text" id="p-search" placeholder="코드 검색…" oninput="filterParticipants()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:140px;">
+        <select id="p-gender" onchange="filterParticipants()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);">
+          <option value="">성별 전체</option>
+          <option value="남">남</option>
+          <option value="여">여</option>
+        </select>
+        <div style="display:flex;align-items:center;gap:6px;font-size:.83rem;color:var(--muted);">
+          나이
+          <input type="number" id="p-age-min" placeholder="최소" oninput="filterParticipants()" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:68px;">
+          ~
+          <input type="number" id="p-age-max" placeholder="최대" oninput="filterParticipants()" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:68px;">
+        </div>
+        <select id="p-group" onchange="filterParticipants()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);">
+          <option value="">그룹 전체</option>
+          {% set _groups = [] %}{% for p in participants %}{% if p.group_name and p.group_name not in _groups %}{% set _ = _groups.append(p.group_name) %}{% endif %}{% endfor %}
+          {% for g in _groups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        </select>
+        <span id="p-filter-count" style="font-size:.8rem;color:var(--muted);margin-left:auto;">{{ participants|length }}명</span>
+        <button type="button" onclick="clearParticipantFilters()" style="font-size:.78rem;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 8px;">필터 초기화</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap;">
         <form action="{{ url_for('portal_participants_bulk_group', project_id=project.id) }}" method="POST" style="display:flex;gap:8px;align-items:center;" id="bulk-group-form">
           <span style="font-size:.82rem;color:var(--muted);">선택된 참여자</span>
           <input type="text" name="group_name" placeholder="그룹명 입력" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:140px;">
@@ -105,13 +128,13 @@
       </div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
         {% if participants %}
-        <table class="data-table">
+        <table class="data-table" id="participants-table">
           <thead><tr>
             <th></th><th>코드</th><th>성별</th><th>나이</th><th>그룹</th><th>등록일</th><th>측정 수</th><th></th>
           </tr></thead>
           <tbody>
           {% for p in participants %}
-          <tr>
+          <tr data-code="{{ p.code }}" data-gender="{{ p.gender or '' }}" data-age="{{ p.age or '' }}" data-group="{{ p.group_name or '' }}">
             <td style="width:32px;"><input type="checkbox" name="participant_ids" value="{{ p.id }}" form="bulk-group-form" style="cursor:pointer;"></td>
             <td style="font-weight:700;color:var(--accent);"><a href="{{ url_for('portal_participant_detail', project_id=project.id, participant_id=p.id) }}" style="color:var(--accent);text-decoration:none;">{{ p.code }}</a></td>
             <td>{{ p.gender or '—' }}</td>
@@ -132,18 +155,39 @@
 
     <!-- ── 측정 데이터 탭 ── -->
     <div id="tab-measurements" class="tab-content">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:16px;">
+      <!-- 필터 바 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+        <input type="text" id="m-search" placeholder="참여자 코드…" oninput="filterMeasurements()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:140px;">
+        <select id="m-phase" onchange="filterMeasurements()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);">
+          <option value="">회차 전체</option>
+          {% set _phases = [] %}{% for m in measurements %}{% if m.phase and m.phase not in _phases %}{% set _ = _phases.append(m.phase) %}{% endif %}{% endfor %}
+          {% for ph in _phases %}<option value="{{ ph }}">{{ ph }}</option>{% endfor %}
+        </select>
+        <select id="m-group" onchange="filterMeasurements()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);">
+          <option value="">그룹 전체</option>
+          {% set _mgroups = [] %}{% for m in measurements %}{% if m.group_name and m.group_name not in _mgroups %}{% set _ = _mgroups.append(m.group_name) %}{% endif %}{% endfor %}
+          {% for g in _mgroups %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+        </select>
+        <select id="m-excl" onchange="filterMeasurements()" style="padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);">
+          <option value="">전체 (포함+제외)</option>
+          <option value="0">포함만</option>
+          <option value="1">제외만</option>
+        </select>
+        <span id="m-filter-count" style="font-size:.8rem;color:var(--muted);margin-left:auto;">{{ measurements|length }}건</span>
+        <button type="button" onclick="clearMeasurementFilters()" style="font-size:.78rem;color:var(--muted);background:none;border:none;cursor:pointer;padding:4px 8px;">필터 초기화</button>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
         <button class="btn btn-primary" onclick="document.getElementById('add-measurement-modal').classList.add('open')" style="font-size:.85rem;">+ 데이터 입력</button>
       </div>
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
         {% if measurements %}
-        <table class="data-table">
+        <table class="data-table" id="measurements-table">
           <thead><tr>
-            <th>참여자</th><th>그룹</th><th>회차</th><th>측정일</th><th>데이터</th><th>메모</th><th>제외</th>
+            <th>참여자</th><th>그룹</th><th>회차</th><th>측정일</th><th>데이터</th><th>메모</th><th></th><th>제외</th>
           </tr></thead>
           <tbody>
           {% for m in measurements %}
-          <tr style="{% if m.excluded %}opacity:.45;{% endif %}">
+          <tr data-code="{{ m.participant_code or '' }}" data-phase="{{ m.phase or '' }}" data-group="{{ m.group_name or '' }}" data-excl="{{ 1 if m.excluded else 0 }}" style="{% if m.excluded %}opacity:.45;{% endif %}">
             <td style="font-weight:700;color:var(--accent);">{{ m.participant_code or m.participant_id[:8] }}</td>
             <td style="color:var(--muted);font-size:.8rem;">{{ m.group_name or '—' }}</td>
             <td><span class="phase-badge">{{ m.phase or '—' }}</span></td>
@@ -503,6 +547,65 @@
     </form>
   </div>
 </div>
+
+<!-- 범위 추출 모달 -->
+<div class="modal-overlay" id="range-export-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box" style="max-width:560px;">
+    <h3>범위 데이터 추출 (CSV)</h3>
+    <form method="GET" action="{{ url_for('portal_project_export_range', project_id=project.id) }}">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="form-group">
+          <label>측정일 시작</label>
+          <input type="date" name="date_from">
+        </div>
+        <div class="form-group">
+          <label>측정일 종료</label>
+          <input type="date" name="date_to">
+        </div>
+        <div class="form-group">
+          <label>회차 (Phase)</label>
+          <select name="phase" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="">전체</option>
+            {% set _ep = [] %}{% for m in measurements %}{% if m.phase and m.phase not in _ep %}{% set _ = _ep.append(m.phase) %}{% endif %}{% endfor %}
+            {% for ph in _ep %}<option value="{{ ph }}">{{ ph }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>그룹</label>
+          <select name="group" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="">전체</option>
+            {% set _eg = [] %}{% for p in participants %}{% if p.group_name and p.group_name not in _eg %}{% set _ = _eg.append(p.group_name) %}{% endif %}{% endfor %}
+            {% for g in _eg %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>변수 범위 필터 (선택)</label>
+          <select name="var_name" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+            <option value="">변수 선택 안 함</option>
+            {% for v in variables %}<option value="{{ v.name }}">{{ v.label or v.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>값 범위</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="number" name="val_min" placeholder="최솟값" step="any" style="flex:1;padding:10px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;">
+            <span style="color:var(--muted);">~</span>
+            <input type="number" name="val_max" placeholder="최댓값" step="any" style="flex:1;padding:10px 12px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;">
+          </div>
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:4px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;">
+          <input type="checkbox" name="exclude_excl" value="1" checked> 제외(excluded) 처리된 측정 제외
+        </label>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px;">
+        <button type="button" class="btn btn-outline" onclick="document.getElementById('range-export-modal').classList.remove('open')">취소</button>
+        <button type="submit" class="btn btn-primary">CSV 다운로드</button>
+      </div>
+    </form>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -718,6 +821,69 @@ function openEditVar(id, name, label, varType, unit) {
   document.getElementById('edit-variable-form').action =
     `/portal/projects/{{ project.id }}/variables/${id}/edit`;
   document.getElementById('edit-variable-modal').classList.add('open');
+}
+
+// ── Participant filter ────────────────────────────────
+function filterParticipants() {
+  const q      = (document.getElementById('p-search')?.value || '').toLowerCase();
+  const gender = document.getElementById('p-gender')?.value || '';
+  const ageMin = parseInt(document.getElementById('p-age-min')?.value) || 0;
+  const ageMax = parseInt(document.getElementById('p-age-max')?.value) || 999;
+  const group  = document.getElementById('p-group')?.value || '';
+  const rows   = document.querySelectorAll('#participants-table tbody tr');
+  let vis = 0;
+  rows.forEach(r => {
+    const code  = (r.dataset.code || '').toLowerCase();
+    const rGend = r.dataset.gender || '';
+    const rAge  = parseInt(r.dataset.age) || 0;
+    const rGrp  = r.dataset.group || '';
+    const show  = (!q || code.includes(q))
+                && (!gender || rGend === gender)
+                && (rAge === 0 || (rAge >= ageMin && rAge <= ageMax))
+                && (!group || rGrp === group);
+    r.style.display = show ? '' : 'none';
+    if (show) vis++;
+  });
+  const el = document.getElementById('p-filter-count');
+  if (el) el.textContent = vis + '명';
+}
+function clearParticipantFilters() {
+  ['p-search','p-gender','p-age-min','p-age-max','p-group'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  filterParticipants();
+}
+
+// ── Measurement filter ────────────────────────────────
+function filterMeasurements() {
+  const q     = (document.getElementById('m-search')?.value || '').toLowerCase();
+  const phase = document.getElementById('m-phase')?.value || '';
+  const group = document.getElementById('m-group')?.value || '';
+  const excl  = document.getElementById('m-excl')?.value || '';
+  const rows  = document.querySelectorAll('#measurements-table tbody tr');
+  let vis = 0;
+  rows.forEach(r => {
+    const code  = (r.dataset.code || '').toLowerCase();
+    const rPh   = r.dataset.phase || '';
+    const rGrp  = r.dataset.group || '';
+    const rExcl = r.dataset.excl || '0';
+    const show  = (!q || code.includes(q))
+                && (!phase || rPh === phase)
+                && (!group || rGrp === group)
+                && (!excl  || rExcl === excl);
+    r.style.display = show ? '' : 'none';
+    if (show) vis++;
+  });
+  const el = document.getElementById('m-filter-count');
+  if (el) el.textContent = vis + '건';
+}
+function clearMeasurementFilters() {
+  ['m-search','m-phase','m-group','m-excl'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  filterMeasurements();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

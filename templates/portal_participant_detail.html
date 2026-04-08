@@ -32,11 +32,11 @@
 
   <div class="container" style="padding-top:24px;padding-bottom:60px;">
 
-    <!-- 사전-사후 변화량 -->
+    <!-- 사전-사후 변화량 (전체 요약) -->
     {% if changes %}
     <div style="margin-bottom:28px;">
-      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">사전-사후 변화량</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">전체 변화량 요약 (첫 측정 → 마지막 측정)</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
         {% for vname, c in changes.items() %}
         <div class="change-card">
           <div style="font-size:.78rem;color:var(--muted);margin-bottom:6px;">{{ c.label }}</div>
@@ -44,8 +44,46 @@
             {% if c.diff > 0 %}+{% endif %}{{ c.diff }}{% if c.unit %} {{ c.unit }}{% endif %}
           </div>
           <div style="font-size:.75rem;color:var(--muted);margin-top:4px;">{{ c.pre }} → {{ c.post }}</div>
+          {% if c.pct is not none %}
+          <div style="font-size:.72rem;margin-top:2px;{% if c.pct > 0 %}color:#0a8a4a{% elif c.pct < 0 %}color:#c0392b{% else %}color:var(--muted){% endif %};">
+            ({% if c.pct > 0 %}+{% endif %}{{ c.pct }}%)
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- 단계별 변화량 (Δ 표) -->
+    {% if phase_deltas and variables %}
+    <div style="margin-bottom:28px;">
+      <h3 style="font-family:'Nunito',sans-serif;font-size:.85rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:14px;">단계별 변화량 (Δ)</h3>
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr>
+            <th>구간</th>
+            {% for v in variables %}<th>{{ v.label or v.name }}</th>{% endfor %}
+          </tr></thead>
+          <tbody>
+          {% for pd in phase_deltas %}
+          <tr>
+            <td style="font-size:.8rem;color:var(--muted);white-space:nowrap;">{{ pd.from_phase }} → {{ pd.to_phase }}</td>
+            {% for v in variables %}
+            {% set d = pd.deltas.get(v.name) %}
+            {% if d %}
+            <td style="font-weight:600;{% if d.diff > 0 %}color:#0a8a4a{% elif d.diff < 0 %}color:#c0392b{% else %}color:var(--muted){% endif %};">
+              {% if d.diff > 0 %}+{% endif %}{{ d.diff }}
+              {% if d.pct is not none %}<span style="font-size:.72rem;font-weight:400;"> ({% if d.pct > 0 %}+{% endif %}{{ d.pct }}%)</span>{% endif %}
+            </td>
+            {% else %}
+            <td style="color:var(--muted);">—</td>
+            {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
     </div>
     {% endif %}

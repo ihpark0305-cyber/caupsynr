@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}감사 로그 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:28px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.portal-header-inner{display:flex;justify-content:space-between;align-items:center;}
+.portal-nav{background:var(--surface);border-bottom:1px solid var(--border);}
+.portal-nav-inner{display:flex;align-items:center;gap:2px;padding:0 28px;}
+.pnav-btn{font-size:.82rem;font-weight:500;padding:12px 16px;color:var(--muted);border-bottom:2px solid transparent;transition:all .15s;text-decoration:none;display:block;}
+.pnav-btn:hover{color:var(--dark);}
+.pnav-btn.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600;}
+.data-table{width:100%;border-collapse:collapse;font-size:.84rem;}
+.data-table th{padding:10px 14px;text-align:left;font-weight:600;color:var(--muted);font-size:.73rem;text-transform:uppercase;letter-spacing:.06em;background:var(--bg);}
+.data-table td{padding:10px 14px;border-top:1px solid var(--border-light);}
+.action-badge{font-size:.72rem;padding:2px 8px;border-radius:100px;font-weight:600;}
+.action-delete{background:#fee2e2;color:#991b1b;}
+.action-edit{background:#dbeafe;color:#1e40af;}
+.action-toggle{background:#fef3c7;color:#92400e;}
+.action-other{background:var(--accent-light);color:var(--accent);}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container portal-header-inner">
+      <div>
+        <span class="label" style="color:var(--accent-mid);display:block;margin-bottom:4px;">Researcher Portal</span>
+        <h1 style="color:#fff;font-size:1.6rem;margin:0;">감사 로그</h1>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;">
+        <span style="color:rgba(255,255,255,.45);font-size:.83rem;">{{ researcher }}</span>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="portal-nav">
+    <div class="container portal-nav-inner">
+      <a href="{{ url_for('portal') }}" class="pnav-btn">프로젝트</a>
+      <a href="{{ url_for('portal_all_participants') }}" class="pnav-btn">전체 참여자</a>
+      <a href="{{ url_for('portal_all_sessions') }}" class="pnav-btn">전체 세션</a>
+      <a href="{{ url_for('portal_settings') }}" class="pnav-btn">설정</a>
+      <a href="{{ url_for('portal_news') }}" class="pnav-btn">📣 공지 관리</a>
+      <a href="{{ url_for('portal_contacts') }}" class="pnav-btn">✉ 문의 수신함</a>
+      <a href="{{ url_for('portal_audit') }}" class="pnav-btn active">🗒 감사 로그</a>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+
+    <!-- 필터 -->
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+      <input type="text" id="log-search" placeholder="연구자/액션/상세 검색…" oninput="filterLog()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;width:220px;background:var(--surface);">
+      <select id="log-action" onchange="filterLog()" style="padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--surface);">
+        <option value="">모든 액션</option>
+        <option value="delete">삭제 (delete)</option>
+        <option value="edit">편집 (edit)</option>
+        <option value="toggle">토글 (toggle)</option>
+      </select>
+      <span id="log-count" style="font-size:.8rem;color:var(--muted);margin-left:auto;">{{ logs|length }}건</span>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;">
+      {% if logs %}
+      <table class="data-table" id="audit-table">
+        <thead><tr>
+          <th>일시</th><th>연구자</th><th>액션</th><th>대상 테이블</th><th>대상 ID</th><th>상세</th>
+        </tr></thead>
+        <tbody>
+        {% for log in logs %}
+        <tr data-text="{{ log.action }} {{ log.researcher }} {{ log.detail or '' }}">
+          <td style="white-space:nowrap;color:var(--muted);">{{ (log.created_at or '')[:16].replace('T',' ') }}</td>
+          <td style="font-size:.82rem;">{{ log.researcher or '—' }}</td>
+          <td>
+            {% if 'delete' in (log.action or '') %}
+            <span class="action-badge action-delete">{{ log.action }}</span>
+            {% elif 'edit' in (log.action or '') %}
+            <span class="action-badge action-edit">{{ log.action }}</span>
+            {% elif 'toggle' in (log.action or '') %}
+            <span class="action-badge action-toggle">{{ log.action }}</span>
+            {% else %}
+            <span class="action-badge action-other">{{ log.action }}</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.8rem;color:var(--muted);">{{ log.target_table or '—' }}</td>
+          <td style="font-family:monospace;font-size:.75rem;color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ log.target_id or '' }}">{{ (log.target_id or '')[:16] }}…</td>
+          <td style="font-size:.82rem;color:var(--text);">{{ log.detail or '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:56px;text-align:center;color:var(--muted);">
+        <div style="font-size:2.5rem;margin-bottom:12px;">🗒</div>
+        <p>아직 기록된 활동이 없어요.</p>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterLog() {
+  const q      = (document.getElementById('log-search')?.value || '').toLowerCase();
+  const action = (document.getElementById('log-action')?.value || '').toLowerCase();
+  const rows   = document.querySelectorAll('#audit-table tbody tr');
+  let vis = 0;
+  rows.forEach(r => {
+    const text = (r.dataset.text || '').toLowerCase();
+    const show = (!q || text.includes(q)) && (!action || text.includes(action));
+    r.style.display = show ? '' : 'none';
+    if (show) vis++;
+  });
+  const el = document.getElementById('log-count');
+  if (el) el.textContent = vis + '건';
+}
+</script>
+{% endblock %}
