@@ -23,7 +23,10 @@
       "Bash(python -c \":*)",
       "Bash(python -c \"import scipy; print\\(''scipy ok''\\)\")",
       "Bash(python -c \"import numpy; print\\(''numpy ok''\\)\")",
-      "Bash(python -c \"from scipy import stats; import numpy; print\\(''ok''\\)\")"
+      "Bash(python -c \"from scipy import stats; import numpy; print\\(''ok''\\)\")",
+      "Bash(python -c \"import flask_wtf, flask_limiter, flask_mail; print\\(''all ok''\\)\")",
+      "Bash(python -m py_compile app.py)",
+      "Bash(python -c \"import app\")"
     ]
   },
   "hooks": {
