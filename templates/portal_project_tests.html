@@ -68,6 +68,8 @@
         <span style="color:rgba(255,255,255,.4);font-size:.82rem;">{{ researcher }}</span>
       </div>
       <div style="display:flex;gap:10px;align-items:center;">
+        <a href="{{ url_for('portal_project_tests_export', project_id=project.id) }}"
+           class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">CSV 내보내기</a>
         <a href="{{ url_for('logout') }}" class="btn btn-outline"
            style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">로그아웃</a>
       </div>
@@ -237,7 +239,7 @@
           {% if vdata.anova %}
           <div style="padding:14px 20px;border-top:1px solid var(--border-light);">
             <p style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;">전체 그룹 검정 (3+ 그룹)</p>
-            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;">
               <div style="background:var(--bg);border-radius:8px;padding:7px 14px;font-size:.82rem;border:1px solid var(--border);">
                 <span style="color:var(--muted);">One-way ANOVA</span>
                 <span style="margin:0 8px;font-weight:700;color:var(--dark);">F={{ vdata.anova.F }}</span>
@@ -252,6 +254,20 @@
               </div>
               <div style="font-size:.82rem;color:var(--muted);">η² = <strong style="color:var(--dark);">{{ vdata.anova.eta2 }}</strong></div>
             </div>
+            {% if vdata.anova.tukey %}
+            <div>
+              <p style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:#0a8a4a;margin-bottom:8px;">Tukey HSD 사후 검정</p>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              {% for tp in vdata.anova.tukey %}
+                <div style="background:{% if tp.sig %}#dcfce7{% else %}var(--bg){% endif %};border:1px solid {% if tp.sig %}#86efac{% else %}var(--border){% endif %};border-radius:8px;padding:6px 12px;font-size:.8rem;">
+                  <span style="font-weight:600;">{{ tp.g1 }} vs {{ tp.g2 }}</span>
+                  <span style="color:var(--muted);margin-left:6px;">p={{ tp.p }}</span>
+                  <span class="sig-badge {% if tp.sig %}sig-yes{% else %}sig-no{% endif %}" style="margin-left:6px;">{% if tp.sig %}*{% else %}n.s.{% endif %}</span>
+                </div>
+              {% endfor %}
+              </div>
+            </div>
+            {% endif %}
           </div>
           {% endif %}
 
