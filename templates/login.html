@@ -23,7 +23,10 @@
         </div>
         <button type="submit" class="btn btn-primary" style="width:100%;margin-top:4px;">로그인</button>
       </form>
-      <p style="text-align:center;margin-top:16px;font-size:.82rem;color:var(--muted);">계정 문의: <a href="mailto:caupsynr@gmail.com" style="color:var(--accent);">caupsynr@gmail.com</a></p>
+      <p style="text-align:center;margin-top:16px;font-size:.82rem;color:var(--muted);">
+        <a href="{{ url_for('reset_password_request') }}" style="color:var(--accent);">비밀번호를 잊으셨나요?</a>
+        &nbsp;·&nbsp; 계정 문의: <a href="mailto:caupsynr@gmail.com" style="color:var(--accent);">caupsynr@gmail.com</a>
+      </p>
     </div>
   </div>
 </section>

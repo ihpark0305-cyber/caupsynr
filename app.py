@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os, sqlite3, uuid as _uuid, json, csv, io, re
 from scipy import stats as _scipy_stats
 import numpy as _np
-from datetime import datetime
+from datetime import datetime, timedelta
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_wtf.csrf import CSRFProtect
@@ -149,37 +149,97 @@ def init_db():
                 target_table TEXT,
                 target_id TEXT,
                 detail TEXT,
+                before_val TEXT,
+                after_val TEXT,
                 created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS project_collaborators (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                researcher_email TEXT NOT NULL,
+                role TEXT DEFAULT 'editor',
+                invited_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS reset_tokens (
+                token TEXT PRIMARY KEY,
+                email TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used INTEGER DEFAULT 0
+            );
+            CREATE TABLE IF NOT EXISTS project_protocols (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                description TEXT,
+                due_offset_days INTEGER DEFAULT 0,
+                sort_order INTEGER DEFAULT 0
             );
         ''')
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        # Seed default accounts if table is empty
+        # Seed default accounts via environment variables only
         existing = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
         if existing == 0:
-            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("caupsynr@gmail.com", generate_password_hash("tsl2025!")))
-            conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)", ("yunjungchoi@cau.ac.kr", generate_password_hash("tsl2025!")))
-            conn.commit()
-    # Migrate: add excluded column if missing
+            seed_email = os.getenv("SEED_ADMIN_EMAIL","")
+            seed_pw    = os.getenv("SEED_ADMIN_PASSWORD","")
+            if seed_email and seed_pw:
+                conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)",
+                             (seed_email, generate_password_hash(seed_pw)))
+                conn.commit()
+    # Migrations: add columns if missing
+    _migrations = [
+        ("measurements",    "ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0"),
+        ("audit_log",       "ALTER TABLE audit_log ADD COLUMN before_val TEXT"),
+        ("audit_log",       "ALTER TABLE audit_log ADD COLUMN after_val TEXT"),
+    ]
     with sqlite3.connect(DB_PATH) as conn:
+        for _, stmt in _migrations:
+            try: conn.execute(stmt); conn.commit()
+            except Exception: pass
+        # Indexes
+        for idx_stmt in [
+            "CREATE INDEX IF NOT EXISTS idx_m_project      ON measurements(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_m_participant  ON measurements(participant_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pp_project     ON project_participants(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_pv_project     ON project_variables(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_m_measured_at  ON measurements(measured_at)",
+            "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_log(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_proj_researcher ON projects(researcher_email)",
+            "CREATE INDEX IF NOT EXISTS idx_collab_project  ON project_collaborators(project_id)",
+        ]:
+            try: conn.execute(idx_stmt)
+            except Exception: pass
+        # Unique index for participant code per project
         try:
-            conn.execute("ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0")
-            conn.commit()
-        except Exception:
-            pass  # column already exists
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_pp_code ON project_participants(project_id, code)")
+        except Exception: pass
+        conn.commit()
 
-def audit(action, table=None, target_id=None, detail=None):
+def audit(action, table=None, target_id=None, detail=None, before=None, after=None):
     """Write an entry to the audit_log table. Silently ignores errors."""
     try:
         researcher = session.get("researcher", "system")
+        before_val = json.dumps(before, ensure_ascii=False) if before is not None else None
+        after_val  = json.dumps(after,  ensure_ascii=False) if after  is not None else None
         with sqlite3.connect(DB_PATH) as conn:
             conn.execute(
-                "INSERT INTO audit_log (researcher,action,target_table,target_id,detail) VALUES (?,?,?,?,?)",
-                (researcher, action, table, target_id, detail)
+                "INSERT INTO audit_log (researcher,action,target_table,target_id,detail,before_val,after_val) VALUES (?,?,?,?,?,?,?)",
+                (researcher, action, table, target_id, detail, before_val, after_val)
             )
             conn.commit()
     except Exception:
         pass
+
+_SAFE_IDENT = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_ALLOWED_TABLES = {
+    'projects','project_participants','measurements','project_variables',
+    'portal_files','accounts','news','research_topics_extra','contact_messages',
+    'sessions','audit_log','project_collaborators','reset_tokens','project_protocols',
+}
+
+def _safe_col(col):
+    col = col.strip()
+    return col if (col == '*' or _SAFE_IDENT.match(col)) else None
 
 def _parse_sb_params(params):
     filters, order_by, select_fields = {}, None, "*"
@@ -190,16 +250,23 @@ def _parse_sb_params(params):
             continue
         key, val = part.split("=", 1)
         if key == "select":
-            select_fields = val
+            cols = [_safe_col(c) for c in val.split(",")]
+            if all(cols):
+                select_fields = ",".join(cols)
         elif key == "order":
             pieces = val.split(".")
-            direction = "DESC" if len(pieces) > 1 and pieces[1].lower() == "desc" else "ASC"
-            order_by = f"{pieces[0]} {direction}"
-        elif val.startswith("eq."):
+            col = _safe_col(pieces[0])
+            if col:
+                direction = "DESC" if len(pieces) > 1 and pieces[1].lower() == "desc" else "ASC"
+                order_by = f"{col} {direction}"
+        elif _SAFE_IDENT.match(key) and val.startswith("eq."):
             filters[key] = val[3:]
     return filters, order_by, select_fields
 
 def sb(method, table, data=None, params=""):
+    if table not in _ALLOWED_TABLES:
+        print(f"DB error: disallowed table '{table}'")
+        return []
     filters, order_by, select_fields = _parse_sb_params(params)
     conn = None
     try:
@@ -283,6 +350,26 @@ def login_required(f):
         if "researcher" not in session: return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
+
+def _require_project_owner(project_id):
+    """Returns (project_dict, None) if OK, (None, redirect_response) if unauthorized."""
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list):
+        flash("프로젝트를 찾을 수 없어요.")
+        return None, redirect(url_for("portal"))
+    owner = proj[0].get("researcher_email","")
+    email = session.get("researcher","")
+    # Allow owner OR collaborator with any role
+    if owner != email:
+        with sqlite3.connect(DB_PATH) as _c:
+            row = _c.execute(
+                "SELECT role FROM project_collaborators WHERE project_id=? AND researcher_email=?",
+                (project_id, email)
+            ).fetchone()
+        if not row:
+            flash("이 프로젝트에 접근 권한이 없어요.")
+            return None, redirect(url_for("portal"))
+    return proj[0], None
 
 # ─── Site-wide ───────────────────────────────────────────────
 PROFESSOR = {
@@ -756,9 +843,8 @@ def portal_project_new():
 @app.route("/portal/projects/<project_id>")
 @login_required
 def portal_project(project_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
-    project = proj[0]
+    project, err = _require_project_owner(project_id)
+    if err: return err
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}&order=enrolled_at.desc") or []
     measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.desc") or []
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
@@ -769,18 +855,29 @@ def portal_project(project_id):
         m["group_name"] = info.get("group_name", "")
     for p in (participants if isinstance(participants,list) else []):
         p["mcount"] = sum(1 for m in (measurements_raw if isinstance(measurements_raw,list) else []) if m.get("participant_id")==p["id"])
+    with sqlite3.connect(DB_PATH) as _c:
+        _c.row_factory = sqlite3.Row
+        collaborators = [dict(r) for r in _c.execute(
+            "SELECT * FROM project_collaborators WHERE project_id=? ORDER BY invited_at", (project_id,)).fetchall()]
+        protocols = [dict(r) for r in _c.execute(
+            "SELECT * FROM project_protocols WHERE project_id=? ORDER BY sort_order", (project_id,)).fetchall()]
+    is_owner = project.get("researcher_email") == session.get("researcher")
     return render_template("portal_project.html",
         project=project,
         participants=participants if isinstance(participants,list) else [],
         measurements=measurements_raw if isinstance(measurements_raw,list) else [],
         variables=variables if isinstance(variables,list) else [],
+        collaborators=collaborators,
+        protocols=protocols,
+        is_owner=is_owner,
         researcher=session["researcher"])
 
 @app.route("/portal/projects/<project_id>/delete", methods=["POST"])
 @login_required
 def portal_project_delete(project_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    pname = proj[0]["name"] if proj else project_id
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    pname = proj["name"]
     sb("DELETE","measurements",params=f"?project_id=eq.{project_id}")
     sb("DELETE","project_participants",params=f"?project_id=eq.{project_id}")
     sb("DELETE","project_variables",params=f"?project_id=eq.{project_id}")
@@ -792,13 +889,30 @@ def portal_project_delete(project_id):
 @app.route("/portal/projects/<project_id>/participants/add", methods=["POST"])
 @login_required
 def portal_project_add_participant(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
+    code = request.form.get("code","").strip()
     age_raw = request.form.get("age","").strip()
+    # Server-side validation
+    if not code or len(code) > 50:
+        flash("참여자 코드는 1~50자로 입력해주세요."); return redirect(url_for("portal_project", project_id=project_id))
+    if not re.match(r'^[A-Za-z0-9_\-가-힣]+$', code):
+        flash("코드에 사용할 수 없는 문자가 포함됐어요."); return redirect(url_for("portal_project", project_id=project_id))
+    age = None
+    if age_raw:
+        if not age_raw.isdigit() or not (1 <= int(age_raw) <= 120):
+            flash("나이는 1~120 사이 숫자로 입력해주세요."); return redirect(url_for("portal_project", project_id=project_id))
+        age = int(age_raw)
+    # Duplicate code check
+    existing = sb("GET","project_participants",params=f"?project_id=eq.{project_id}&code=eq.{code}")
+    if existing:
+        flash(f"'{code}' 코드는 이미 이 프로젝트에 존재해요."); return redirect(url_for("portal_project", project_id=project_id))
     sb("POST","project_participants",data={
-        "project_id":  project_id,
-        "code":        request.form.get("code","").strip(),
-        "gender":      request.form.get("gender","").strip() or None,
-        "age":         int(age_raw) if age_raw.isdigit() else None,
-        "group_name":  request.form.get("group_name","").strip() or None,
+        "project_id": project_id,
+        "code":       code,
+        "gender":     request.form.get("gender","").strip() or None,
+        "age":        age,
+        "group_name": request.form.get("group_name","").strip() or None,
     })
     return redirect(url_for("portal_project", project_id=project_id))
 
@@ -826,8 +940,8 @@ def portal_edit_participant(project_id, participant_id):
 @app.route("/portal/projects/<project_id>/participants/<participant_id>")
 @login_required
 def portal_participant_detail(project_id, participant_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    proj, err = _require_project_owner(project_id)
+    if err: return err
     p_list = sb("GET","project_participants",params=f"?id=eq.{participant_id}")
     if not p_list or not isinstance(p_list,list): return redirect(url_for("portal_project",project_id=project_id))
     participant = p_list[0]
@@ -872,7 +986,7 @@ def portal_participant_detail(project_id, participant_id):
             if entry["deltas"]:
                 phase_deltas.append(entry)
     return render_template("portal_participant_detail.html",
-        project=proj[0], participant=participant,
+        project=proj, participant=participant,
         measurements=measurements if isinstance(measurements,list) else [],
         variables=variables if isinstance(variables,list) else [],
         changes=changes, phase_deltas=phase_deltas,
@@ -881,6 +995,8 @@ def portal_participant_detail(project_id, participant_id):
 @app.route("/portal/projects/<project_id>/measurements/add", methods=["POST"])
 @login_required
 def portal_project_add_measurement(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     if variables and isinstance(variables,list):
         data_dict = {}
@@ -935,6 +1051,8 @@ def portal_edit_measurement(project_id, measurement_id):
 @app.route("/portal/projects/<project_id>/variables/add", methods=["POST"])
 @login_required
 def portal_project_add_variable(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     sb("POST","project_variables",data={
         "project_id": project_id,
         "name":       request.form.get("name","").strip(),
@@ -947,8 +1065,9 @@ def portal_project_add_variable(project_id):
 @app.route("/portal/projects/<project_id>/export")
 @login_required
 def portal_project_export(project_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    proj_name = proj[0]["name"] if proj and isinstance(proj,list) else "project"
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    proj_name = proj["name"]
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
     measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.desc") or []
     p_map = {p["id"]: p for p in (participants if isinstance(participants,list) else [])}
@@ -968,8 +1087,9 @@ def portal_project_export(project_id):
 @app.route("/portal/projects/<project_id>/export/range")
 @login_required
 def portal_project_export_range(project_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    proj_name = proj[0]["name"] if proj and isinstance(proj,list) else "project"
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    proj_name = proj["name"]
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
     variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}&order=measured_at.asc") or []
@@ -1016,23 +1136,26 @@ def portal_project_export_range(project_id):
 @app.route("/portal/projects/<project_id>/upload", methods=["POST"])
 @login_required
 def portal_project_upload(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     f = request.files.get("file")
     if not f or not f.filename:
         flash("파일을 선택해주세요.")
         return redirect(url_for("portal_project", project_id=project_id))
     fname = f.filename.lower()
     rows = []
+    tmp_path = None
     try:
         if fname.endswith(".csv"):
-            import io as _io
             content = f.read().decode("utf-8-sig")
-            reader = csv.DictReader(_io.StringIO(content))
+            reader = csv.DictReader(io.StringIO(content))
             rows = list(reader)
         elif fname.endswith((".xlsx",".xls")):
             import tempfile, openpyxl
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
-            f.save(tmp.name)
-            wb = openpyxl.load_workbook(tmp.name, read_only=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                tmp_path = tmp.name
+                f.save(tmp_path)
+            wb = openpyxl.load_workbook(tmp_path, read_only=True)
             ws = wb.active
             headers = [str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))]
             for row in ws.iter_rows(min_row=2, values_only=True):
@@ -1044,46 +1167,68 @@ def portal_project_upload(project_id):
     except Exception as e:
         flash(f"파일 읽기 오류: {e}")
         return redirect(url_for("portal_project", project_id=project_id))
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try: os.unlink(tmp_path)
+            except: pass
+
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     var_names = [v["name"] for v in (variables if isinstance(variables,list) else [])]
+    var_types = {v["name"]: v.get("var_type","number") for v in (variables if isinstance(variables,list) else [])}
     existing = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
     p_map = {p["code"]: p["id"] for p in (existing if isinstance(existing,list) else [])}
-    added_p = added_m = errors = 0
-    for row in rows:
+    added_p = added_m = 0
+    row_errors = []
+    for i, row in enumerate(rows, start=2):
         code = str(row.get("code") or row.get("참여자코드") or "").strip()
-        if not code: errors+=1; continue
+        if not code:
+            row_errors.append(f"행{i}: 코드 누락"); continue
+        if len(code) > 50:
+            row_errors.append(f"행{i}: 코드 너무 길어요 ({code[:12]}…)"); continue
         if code not in p_map:
             age_raw = str(row.get("age") or row.get("나이") or "").strip()
+            age_val = int(age_raw) if age_raw.isdigit() and 1 <= int(age_raw) <= 120 else None
             new_p = sb("POST","project_participants",data={
-                "project_id":project_id,"code":code,
-                "gender":str(row.get("gender") or row.get("성별") or "").strip() or None,
-                "age":int(age_raw) if age_raw.isdigit() else None,
-                "group_name":str(row.get("group") or row.get("그룹") or "").strip() or None,
+                "project_id": project_id, "code": code,
+                "gender":     str(row.get("gender") or row.get("성별") or "").strip() or None,
+                "age":        age_val,
+                "group_name": str(row.get("group") or row.get("그룹") or "").strip() or None,
             })
-            if new_p and isinstance(new_p,list): p_map[code]=new_p[0]["id"]; added_p+=1
+            if new_p and isinstance(new_p, list):
+                p_map[code] = new_p[0]["id"]; added_p += 1
+            else:
+                row_errors.append(f"행{i}: 참여자 저장 실패 ({code})"); continue
         pid = p_map.get(code)
-        if not pid: errors+=1; continue
+        if not pid:
+            row_errors.append(f"행{i}: 참여자 ID 없음 ({code})"); continue
         phase = str(row.get("phase") or row.get("회차") or "").strip() or None
         notes = str(row.get("notes") or row.get("메모") or "").strip() or None
         data_dict = {}
         skip = {"code","참여자코드","gender","성별","age","나이","group","그룹","group_name","phase","회차","notes","메모"}
-        for k,v in row.items():
+        for k, v in row.items():
             if k not in skip and v:
-                try: data_dict[k]=float(v)
-                except: data_dict[k]=v
+                if var_types.get(k,"number") == "number":
+                    try: data_dict[k] = float(v)
+                    except: row_errors.append(f"행{i}: {k} 값 '{v}' 숫자 변환 실패")
+                else:
+                    data_dict[k] = str(v)
         if data_dict:
             sb("POST","measurements",data={"project_id":project_id,"participant_id":pid,
                                            "phase":phase,"notes":notes,"data":data_dict})
-            added_m+=1
-    flash(f"업로드 완료 — 참여자 {added_p}명, 측정 {added_m}건 추가" + (f", {errors}행 오류" if errors else ""))
+            added_m += 1
+    msg = f"업로드 완료 — 참여자 {added_p}명, 측정 {added_m}건 추가"
+    if row_errors:
+        msg += f" / 오류 {len(row_errors)}건: " + "; ".join(row_errors[:5])
+        if len(row_errors) > 5: msg += f" 외 {len(row_errors)-5}건"
+    flash(msg)
     return redirect(url_for("portal_project", project_id=project_id))
 
 @app.route("/portal/projects/<project_id>/stats")
 @login_required
 def portal_project_stats(project_id):
     import math
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    proj, err = _require_project_owner(project_id)
+    if err: return err
     measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
     variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
@@ -1156,7 +1301,7 @@ def portal_project_stats(project_id):
     all_phases = sorted({m.get("phase","") for m in (measurements if isinstance(measurements,list) else []) if m.get("phase")})
     all_groups = sorted({(p.get("group_name") or "미지정") for p in (participants if isinstance(participants,list) else [])})
     return render_template("portal_project_stats.html",
-        project=proj[0],stats=stats,variables=variables if isinstance(variables,list) else [],
+        project=proj,stats=stats,variables=variables if isinstance(variables,list) else [],
         all_phases=all_phases,all_groups=all_groups,
         researcher=session["researcher"])
 
@@ -1164,6 +1309,8 @@ def portal_project_stats(project_id):
 @app.route("/portal/projects/<project_id>/outliers/exclude", methods=["POST"])
 @login_required
 def portal_outliers_exclude(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     ids = request.form.getlist("measurement_ids")
     if ids:
         with sqlite3.connect(DB_PATH) as conn:
@@ -1177,6 +1324,8 @@ def portal_outliers_exclude(project_id):
 @app.route("/portal/projects/<project_id>/variables/<var_id>/edit", methods=["POST"])
 @login_required
 def portal_variable_edit(project_id, var_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     sb("PATCH", "project_variables",
        data={
            "label":    request.form.get("label","").strip() or None,
@@ -1199,6 +1348,8 @@ def portal_variable_delete(project_id, var_id):
 @app.route("/portal/projects/<project_id>/measurements/<m_id>/toggle-exclude", methods=["POST"])
 @login_required
 def portal_measurement_toggle_exclude(project_id, m_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     rows = sb("GET", "measurements", params=f"?id=eq.{m_id}")
     if rows:
         new_val = 0 if rows[0].get("excluded") else 1
@@ -1212,8 +1363,8 @@ def portal_measurement_toggle_exclude(project_id, m_id):
 @login_required
 def portal_project_tests(project_id):
     import math
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj or not isinstance(proj,list): return redirect(url_for("portal"))
+    proj, err = _require_project_owner(project_id)
+    if err: return err
     measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
     variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
@@ -1297,22 +1448,41 @@ def portal_project_tests(project_id):
 
             # ANOVA / Kruskal-Wallis for 3+ groups
             if len(grp_list) >= 3:
-                all_groups_data = [grp_vals[g] for g in grp_list if len(grp_vals[g]) >= 2]
+                valid_groups = [g for g in grp_list if len(grp_vals[g]) >= 2]
+                all_groups_data = [grp_vals[g] for g in valid_groups]
                 if len(all_groups_data) >= 3:
                     try:
                         f_stat, f_p = _scipy_stats.f_oneway(*all_groups_data)
                         h_stat, h_p = _scipy_stats.kruskal(*all_groups_data)
-                        # Eta-squared
-                        grand = [v for g in all_groups_data for v in g]
+                        grand = [x for g in all_groups_data for x in g]
                         grand_mean = float(_np.mean(grand))
                         ss_between = sum(len(g)*(float(_np.mean(g))-grand_mean)**2 for g in all_groups_data)
-                        ss_total = sum((v-grand_mean)**2 for v in grand)
+                        ss_total = sum((x-grand_mean)**2 for x in grand)
                         eta2 = round(ss_between/ss_total, 3) if ss_total > 0 else 0
+                        # Tukey HSD post-hoc (only if ANOVA is significant)
+                        tukey_pairs = []
+                        if f_p < 0.05:
+                            try:
+                                tukey_res = _scipy_stats.tukey_hsd(*all_groups_data)
+                                for ti in range(len(valid_groups)):
+                                    for tj in range(ti+1, len(valid_groups)):
+                                        gi, gj = valid_groups[ti], valid_groups[tj]
+                                        tval = tukey_res.statistic[ti][tj]
+                                        tpval = tukey_res.pvalue[ti][tj]
+                                        tukey_pairs.append({
+                                            "g1": gi, "g2": gj,
+                                            "stat": round(float(tval),3),
+                                            "p": round(float(tpval),4),
+                                            "sig": float(tpval) < 0.05,
+                                        })
+                            except Exception as te:
+                                print(f"tukey error {vn}: {te}")
                         vres["anova"] = {
-                            "groups": grp_list,
+                            "groups": valid_groups,
                             "F": round(float(f_stat),3), "f_p": round(float(f_p),4), "f_sig": f_p < 0.05,
                             "H": round(float(h_stat),3), "h_p": round(float(h_p),4), "h_sig": h_p < 0.05,
                             "eta2": eta2,
+                            "tukey": tukey_pairs,
                         }
                     except Exception as e:
                         print(f"anova error {vn}: {e}")
@@ -1391,7 +1561,7 @@ def portal_project_tests(project_id):
             corr_matrix = matrix
 
     return render_template("portal_project_tests.html",
-        project=proj[0],
+        project=proj,
         results=results,
         variables=variables if isinstance(variables,list) else [],
         corr_matrix=corr_matrix,
@@ -1399,6 +1569,60 @@ def portal_project_tests(project_id):
         groups=groups,
         phases=phases,
         researcher=session["researcher"])
+
+@app.route("/portal/projects/<project_id>/tests/export")
+@login_required
+def portal_project_tests_export(project_id):
+    """Export statistical test results as CSV."""
+    _, err = _require_project_owner(project_id)
+    if err: return err
+    # Re-run the test logic (lightweight version returning only flat rows)
+    measurements_raw = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
+    variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
+    participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    proj_name = proj[0]["name"] if proj else "project"
+    pid_to_group = {p["id"]: (p.get("group_name") or "미지정") for p in (participants if isinstance(participants,list) else [])}
+    measurements = [m for m in (measurements_raw if isinstance(measurements_raw,list) else []) if not m.get("excluded")]
+    for m in measurements:
+        m["group_name"] = pid_to_group.get(m.get("participant_id",""), "미지정")
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["변수","비교유형","그룹1","그룹2","N1","N2","평균1","평균2","t/U/F","p값","유의","Cohen's d","효과크기"])
+    for v in (variables if isinstance(variables,list) else []):
+        vn = v["name"]; label = v.get("label") or vn
+        grp_vals = {}
+        for m in measurements:
+            val = m.get("data",{}).get(vn)
+            if val is not None:
+                try: grp_vals.setdefault(m["group_name"],[]).append(float(val))
+                except: pass
+        grp_list = list(grp_vals.keys())
+        for i in range(len(grp_list)):
+            for j in range(i+1, len(grp_list)):
+                g1, g2 = grp_list[i], grp_list[j]
+                a, b = grp_vals[g1], grp_vals[g2]
+                if len(a) < 2 or len(b) < 2: continue
+                try:
+                    t_s, t_p = _scipy_stats.ttest_ind(a, b, equal_var=False)
+                    n = len(a)+len(b)
+                    ps = _np.sqrt(((len(a)-1)*_np.var(a,ddof=1) + (len(b)-1)*_np.var(b,ddof=1)) / (n-2)) if n > 2 else 0
+                    d = (float(_np.mean(a))-float(_np.mean(b)))/float(ps) if ps > 0 else 0
+                    eff = "large" if abs(d)>=0.8 else "medium" if abs(d)>=0.5 else "small"
+                    writer.writerow([label,"독립표본t",g1,g2,len(a),len(b),round(float(_np.mean(a)),3),round(float(_np.mean(b)),3),round(float(t_s),3),round(float(t_p),4),"*" if t_p<0.05 else "",round(float(d),3),eff])
+                except: pass
+        if len(grp_list) >= 3:
+            gdata = [grp_vals[g] for g in grp_list if len(grp_vals[g]) >= 2]
+            if len(gdata) >= 3:
+                try:
+                    f_s, f_p = _scipy_stats.f_oneway(*gdata)
+                    writer.writerow([label,"ANOVA","(전체)","",sum(len(g) for g in gdata),"",
+                                     "","",round(float(f_s),3),round(float(f_p),4),"*" if f_p<0.05 else "","",""])
+                except: pass
+    output.seek(0)
+    safe = proj_name.replace(" ","_")
+    return Response(output.getvalue(), mimetype="text/csv;charset=utf-8-sig",
+        headers={"Content-Disposition":f"attachment;filename={safe}_stats_{datetime.now().strftime('%Y%m%d')}.csv"})
 
 @app.route("/portal/files")
 @login_required
@@ -1655,6 +1879,8 @@ def api_receive_session():
 @app.route("/portal/projects/<project_id>/edit", methods=["POST"])
 @login_required
 def portal_project_edit(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     new_name = request.form.get("name","").strip()
     sb("PATCH", "projects",
        data={"name": new_name,
@@ -1669,15 +1895,15 @@ def portal_project_edit(project_id):
 @app.route("/portal/projects/<project_id>/clone", methods=["POST"])
 @login_required
 def portal_project_clone(project_id):
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj: return redirect(url_for("portal"))
+    proj, err = _require_project_owner(project_id)
+    if err: return err
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     new_id = str(_uuid.uuid4())
     sb("POST","projects",data={
         "id": new_id,
-        "name": proj[0]["name"] + " (복사)",
-        "description": proj[0].get("description",""),
-        "app_type": proj[0].get("app_type",""),
+        "name": proj["name"] + " (복사)",
+        "description": proj.get("description",""),
+        "app_type": proj.get("app_type",""),
         "researcher_email": session["researcher"],
     })
     for v in (variables if isinstance(variables,list) else []):
@@ -1685,7 +1911,7 @@ def portal_project_clone(project_id):
             "project_id": new_id,
             "name": v["name"], "label": v.get("label"), "var_type": v.get("var_type","number"), "unit": v.get("unit")
         })
-    flash(f"'{proj[0]['name']}' 프로젝트가 복사됐어요. (변수 설정만 복사, 데이터 제외)")
+    flash(f"'{proj['name']}' 프로젝트가 복사됐어요. (변수 설정만 복사, 데이터 제외)")
     return redirect(url_for("portal_project", project_id=new_id))
 
 # ── Excel export ──────────────────────────────────────
@@ -1694,8 +1920,8 @@ def portal_project_clone(project_id):
 def portal_project_export_excel(project_id):
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
-    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
-    if not proj: return redirect(url_for("portal"))
+    proj, err = _require_project_owner(project_id)
+    if err: return err
     participants = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
     measurements = sb("GET","measurements",params=f"?project_id=eq.{project_id}") or []
     variables    = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
@@ -1753,7 +1979,7 @@ def portal_project_export_excel(project_id):
 
     buf = io.BytesIO()
     wb.save(buf); buf.seek(0)
-    proj_name = proj[0]["name"].replace("/","_").replace("\\","_")
+    proj_name = proj["name"].replace("/","_").replace("\\","_")
     return Response(buf.read(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={proj_name}.xlsx"})
@@ -1762,6 +1988,8 @@ def portal_project_export_excel(project_id):
 @app.route("/portal/projects/<project_id>/measurements/<m_id>/edit", methods=["POST"])
 @login_required
 def portal_measurement_edit(project_id, m_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     rows = sb("GET","measurements",params=f"?id=eq.{m_id}")
     if not rows: return redirect(url_for("portal_project", project_id=project_id))
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
@@ -1865,12 +2093,131 @@ def portal_contacts():
 @app.route("/portal/audit")
 @login_required
 def portal_audit():
+    PAGE_SIZE = 50
+    page = max(1, request.args.get("page", 1, type=int))
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
+        total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
         logs = [dict(r) for r in conn.execute(
-            "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 500"
+            "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (PAGE_SIZE, (page - 1) * PAGE_SIZE)
         ).fetchall()]
-    return render_template("portal_audit.html", logs=logs, researcher=session["researcher"])
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    return render_template("portal_audit.html", logs=logs, researcher=session["researcher"],
+                           page=page, total_pages=total_pages, total=total)
+
+# ── Collaboration ──────────────────────────────────────
+@app.route("/portal/projects/<project_id>/collaborators/add", methods=["POST"])
+@login_required
+def portal_project_add_collaborator(project_id):
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    # Only the owner can invite collaborators
+    if proj.get("researcher_email") != session.get("researcher"):
+        flash("프로젝트 소유자만 협력자를 초대할 수 있어요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    email = (request.form.get("collaborator_email") or "").strip().lower()
+    role  = request.form.get("role", "viewer")
+    if not email:
+        flash("초대할 연구자 이메일을 입력해 주세요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    if email == session.get("researcher"):
+        flash("본인을 협력자로 초대할 수 없어요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    with sqlite3.connect(DB_PATH) as conn:
+        existing = conn.execute(
+            "SELECT id FROM project_collaborators WHERE project_id=? AND researcher_email=?",
+            (project_id, email)).fetchone()
+        if existing:
+            flash(f"{email}는 이미 협력자로 등록되어 있어요.")
+            return redirect(url_for("portal_project", project_id=project_id))
+        conn.execute(
+            "INSERT INTO project_collaborators(id,project_id,researcher_email,role) VALUES(?,?,?,?)",
+            (str(uuid.uuid4()), project_id, email, role))
+    audit("collaborator_add", "project_collaborators", project_id,
+          after={"email": email, "role": role})
+    flash(f"{email}를 {role} 역할로 초대했어요.")
+    return redirect(url_for("portal_project", project_id=project_id))
+
+@app.route("/portal/projects/<project_id>/collaborators/remove", methods=["POST"])
+@login_required
+def portal_project_remove_collaborator(project_id):
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    if proj.get("researcher_email") != session.get("researcher"):
+        flash("프로젝트 소유자만 협력자를 제거할 수 있어요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    email = (request.form.get("collaborator_email") or "").strip().lower()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "DELETE FROM project_collaborators WHERE project_id=? AND researcher_email=?",
+            (project_id, email))
+    audit("collaborator_remove", "project_collaborators", project_id, before={"email": email})
+    flash(f"{email}를 협력자 목록에서 제거했어요.")
+    return redirect(url_for("portal_project", project_id=project_id))
+
+# ── Protocol phases ────────────────────────────────────
+@app.route("/portal/projects/<project_id>/protocols/save", methods=["POST"])
+@login_required
+def portal_project_protocols_save(project_id):
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    phases_raw = request.form.get("phases", "")
+    phases = [p.strip() for p in phases_raw.split(",") if p.strip()]
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM project_protocols WHERE project_id=?", (project_id,))
+        for i, phase in enumerate(phases):
+            conn.execute(
+                "INSERT INTO project_protocols(id,project_id,phase_name,sort_order) VALUES(?,?,?,?)",
+                (str(uuid.uuid4()), project_id, phase, i))
+    audit("protocol_save", "project_protocols", project_id, after={"phases": phases})
+    flash("프로토콜 단계가 저장되었어요.")
+    return redirect(url_for("portal_project", project_id=project_id) + "#tab-settings")
+
+# ── Password reset ─────────────────────────────────────
+@app.route("/reset-password", methods=["GET","POST"])
+def reset_password_request():
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        with sqlite3.connect(DB_PATH) as conn:
+            acct = conn.execute("SELECT id FROM accounts WHERE email=?", (email,)).fetchone()
+        if acct:
+            token = str(uuid.uuid4())
+            expires = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
+            with sqlite3.connect(DB_PATH) as conn:
+                conn.execute("DELETE FROM reset_tokens WHERE email=?", (email,))
+                conn.execute("INSERT INTO reset_tokens(token,email,expires_at) VALUES(?,?,?)",
+                             (token, email, expires))
+            reset_url = url_for("reset_password_confirm", token=token, _external=True)
+            flash(f"비밀번호 재설정 링크가 생성되었어요. (개발 환경: {reset_url})")
+        else:
+            flash("해당 이메일로 등록된 계정이 없어요.")
+        return redirect(url_for("reset_password_request"))
+    return render_template("reset_password_request.html")
+
+@app.route("/reset-password/<token>", methods=["GET","POST"])
+def reset_password_confirm(token):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT email, expires_at FROM reset_tokens WHERE token=?", (token,)).fetchone()
+    if not row:
+        flash("유효하지 않거나 이미 사용된 링크예요.")
+        return redirect(url_for("login"))
+    email, expires_at = row
+    if datetime.now() > datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%S"):
+        flash("링크가 만료되었어요. 다시 요청해 주세요.")
+        return redirect(url_for("reset_password_request"))
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        if len(pw) < 8:
+            flash("비밀번호는 8자 이상이어야 해요.")
+            return render_template("reset_password_confirm.html", token=token)
+        hashed = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("UPDATE accounts SET password_hash=? WHERE email=?", (hashed, email))
+            conn.execute("DELETE FROM reset_tokens WHERE token=?", (token,))
+        flash("비밀번호가 재설정되었어요. 로그인해 주세요.")
+        return redirect(url_for("login"))
+    return render_template("reset_password_confirm.html", token=token)
 
 if __name__ == "__main__":
     app.run(debug=False)

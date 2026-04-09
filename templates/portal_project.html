@@ -62,6 +62,7 @@
       <a href="#" class="tab-btn" onclick="showTab('variables',this);return false;">변수 설정</a>
       <a href="{{ url_for('portal_project_stats', project_id=project.id) }}" class="tab-btn" style="text-decoration:none;">기술통계</a>
       <a href="{{ url_for('portal_project_tests', project_id=project.id) }}" class="tab-btn" style="text-decoration:none;">통계 검정</a>
+      <a href="#" class="tab-btn" onclick="showTab('settings',this);return false;" id="tab-btn-settings">⚙️ 설정</a>
     </div>
   </div>
 
@@ -264,15 +265,15 @@
           </div>
           <div class="form-group" style="margin:0;min-width:120px;">
             <label style="font-size:.78rem;">사전 회차</label>
-            <input id="cmp-pre" type="text" value="사전" oninput="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+            <select id="cmp-pre" onchange="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;"></select>
           </div>
           <div class="form-group" style="margin:0;min-width:120px;">
             <label style="font-size:.78rem;">사후 회차</label>
-            <input id="cmp-post" type="text" value="사후" oninput="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;">
+            <select id="cmp-post" onchange="updateCompareChart()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--bg);font-size:.88rem;width:100%;"></select>
           </div>
         </div>
         <canvas id="cmp-chart" style="max-height:380px;"></canvas>
-        <p id="cmp-no-data" style="text-align:center;color:var(--muted);font-size:.85rem;display:none;padding:24px 0;">해당 회차의 데이터가 없어요. 사전/사후 회차명을 확인해주세요.</p>
+        <p id="cmp-no-data" style="text-align:center;color:var(--muted);font-size:.85rem;display:none;padding:24px 0;">해당 회차의 데이터가 없어요.</p>
       </div>
 
       <!-- Chart 3: All variables at a glance (radar) -->
@@ -299,6 +300,116 @@
         </div>
       </div>
       {% endif %}
+    </div>
+
+    <!-- ── 설정 탭 (협력자 + 프로토콜) ── -->
+    <div id="tab-settings" class="tab-content">
+
+      <!-- 협력자 관리 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.9rem;font-weight:700;margin-bottom:16px;">👥 협력 연구자</h4>
+        {% if collaborators %}
+        <table class="data-table" style="margin-bottom:16px;">
+          <thead><tr><th>이메일</th><th>역할</th><th>초대일</th>{% if is_owner %}<th></th>{% endif %}</tr></thead>
+          <tbody>
+          {% for c in collaborators %}
+          <tr>
+            <td>{{ c.researcher_email }}</td>
+            <td><span style="font-size:.75rem;background:var(--surface2);padding:2px 8px;border-radius:100px;">{{ c.role }}</span></td>
+            <td style="color:var(--muted);font-size:.8rem;">{{ (c.invited_at or '')[:10] }}</td>
+            {% if is_owner %}
+            <td>
+              <form method="POST" action="{{ url_for('portal_project_remove_collaborator', project_id=project.id) }}" onsubmit="return confirm('협력자를 제거할까요?')">
+                <input type="hidden" name="collaborator_email" value="{{ c.researcher_email }}">
+                <button type="submit" style="font-size:.72rem;padding:3px 9px;background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:8px;cursor:pointer;">제거</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p style="font-size:.85rem;color:var(--muted);margin-bottom:16px;">아직 협력 연구자가 없어요.</p>
+        {% endif %}
+
+        {% if is_owner %}
+        <form method="POST" action="{{ url_for('portal_project_add_collaborator', project_id=project.id) }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="form-group" style="margin:0;flex:1;min-width:200px;">
+            <label style="font-size:.78rem;">이메일</label>
+            <input type="email" name="collaborator_email" placeholder="researcher@example.com" required style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:100%;background:var(--bg);">
+          </div>
+          <div class="form-group" style="margin:0;min-width:120px;">
+            <label style="font-size:.78rem;">역할</label>
+            <select name="role" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--bg);width:100%;">
+              <option value="viewer">viewer (조회만)</option>
+              <option value="editor">editor (편집 가능)</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="font-size:.85rem;white-space:nowrap;">초대</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <!-- 프로토콜 단계 -->
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.9rem;font-weight:700;margin-bottom:8px;">📋 프로토콜 단계 설정</h4>
+        <p style="font-size:.82rem;color:var(--muted);margin-bottom:16px;">측정 회차를 순서대로 정의하면 프로토콜 준수율을 확인할 수 있어요.</p>
+        {% if protocols %}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+          {% for ph in protocols %}
+          <span style="background:var(--accent-light);color:var(--accent);font-size:.8rem;font-weight:600;padding:4px 12px;border-radius:100px;">{{ loop.index }}. {{ ph.phase_name }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if is_owner %}
+        <form method="POST" action="{{ url_for('portal_project_protocols_save', project_id=project.id) }}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="form-group" style="margin:0;flex:1;min-width:240px;">
+            <label style="font-size:.78rem;">회차 목록 (쉼표로 구분)</label>
+            <input type="text" name="phases" value="{{ protocols | map(attribute='phase_name') | join(', ') }}" placeholder="사전, 1회차, 2회차, 3회차, 사후" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;width:100%;background:var(--bg);">
+          </div>
+          <button type="submit" class="btn btn-primary" style="font-size:.85rem;white-space:nowrap;">저장</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <!-- 프로토콜 준수율 그리드 -->
+      {% if protocols and participants %}
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;">
+        <h4 style="font-family:'Nunito',sans-serif;font-size:.9rem;font-weight:700;margin-bottom:16px;">📊 프로토콜 준수율</h4>
+        <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead><tr>
+            <th>참여자</th>
+            {% for ph in protocols %}<th style="text-align:center;">{{ ph.phase_name }}</th>{% endfor %}
+            <th style="text-align:center;">완료율</th>
+          </tr></thead>
+          <tbody>
+          {% for p in participants %}
+          {% set p_phases = measurements | selectattr('participant_id','eq',p.id) | map(attribute='phase') | list %}
+          <tr>
+            <td style="font-weight:600;color:var(--accent);">{{ p.code }}</td>
+            {% set ns = namespace(done=0) %}
+            {% for ph in protocols %}
+              {% if ph.phase_name in p_phases %}
+                {% set ns.done = ns.done + 1 %}
+                <td style="text-align:center;"><span style="color:#16a34a;font-size:1rem;">✓</span></td>
+              {% else %}
+                <td style="text-align:center;"><span style="color:var(--border);font-size:.85rem;">—</span></td>
+              {% endif %}
+            {% endfor %}
+            <td style="text-align:center;">
+              {% set pct = (ns.done / protocols|length * 100) | round | int %}
+              <span style="font-size:.8rem;font-weight:700;color:{% if pct==100 %}#16a34a{% elif pct>=50 %}var(--accent){% else %}#e74c3c{% endif %};">{{ pct }}%</span>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </div>
+      {% endif %}
+
     </div>
 
     <!-- ── 변수 설정 탭 ── -->
@@ -441,7 +552,7 @@
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
         <div class="form-group">
           <label>참여자 *</label>
-          <select name="participant_id" required style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
+          <select name="participant_id" id="add-m-participant" required onchange="checkDuplicate()" style="width:100%;padding:11px 14px;background:var(--bg);border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;outline:none;">
             <option value="">선택</option>
             {% for p in participants %}
             <option value="{{ p.id }}">{{ p.code }}{% if p.group_name %} ({{ p.group_name }}){% endif %}</option>
@@ -450,8 +561,11 @@
         </div>
         <div class="form-group">
           <label>회차/시점</label>
-          <input type="text" name="phase" placeholder="사전 / 사후 / 1회차">
+          <input type="text" name="phase" id="add-m-phase" placeholder="사전 / 사후 / 1회차" oninput="checkDuplicate()">
         </div>
+      </div>
+      <div id="duplicate-warning" style="display:none;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.83rem;color:#92400e;">
+        ⚠️ 이 참여자의 해당 회차 데이터가 이미 존재해요. 저장하면 추가 기록이 생성됩니다.
       </div>
       {% if variables %}
       <div style="background:var(--bg);border-radius:var(--radius);padding:16px;margin-bottom:14px;">
@@ -622,91 +736,125 @@ function showTab(name, btn) {
   if (btn) btn.classList.add('active');
 }
 
-const COLORS = ['#0F6B6B','#e67e22','#8e44ad','#2980b9','#27ae60','#c0392b'];
+const COLORS = ['#0F6B6B','#e67e22','#8e44ad','#2980b9','#27ae60','#c0392b','#f39c12','#16a085'];
+
+// Filter out excluded measurements for all charts
+const MDATA = MEASUREMENTS.filter(m => !m.excluded);
 
 function avg(arr) {
-  if (!arr.length) return null;
-  return parseFloat((arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2));
+  if (!arr || !arr.length) return null;
+  const nums = arr.map(Number).filter(n => !isNaN(n));
+  return nums.length ? parseFloat((nums.reduce((a,b)=>a+b,0)/nums.length).toFixed(3)) : null;
 }
 
-function updateChart() {
-  const varName  = document.getElementById('viz-var')?.value;
-  const chartType= document.getElementById('viz-type')?.value || 'bar';
-  const groupBy  = document.getElementById('viz-group')?.value || 'phase';
-  if (!varName || !MEASUREMENTS.length) return;
-
-  const grouped = {};
-  MEASUREMENTS.forEach(m => {
-    const val = m.data && m.data[varName];
-    if (val === undefined || val === null) return;
-    const key = groupBy === 'phase' ? (m.phase || '미지정') : (m.participant_code || m.participant_id?.slice(0,6));
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(parseFloat(val));
+// Populate all phase dropdowns from actual data
+function populatePhaseDropdowns() {
+  const phases = [...new Set(MDATA.map(m => m.phase).filter(Boolean))].sort();
+  const opts = phases.map(p => `<option value="${p}">${p}</option>`).join('');
+  ['cmp-pre','cmp-post','radar-phase'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && el.tagName === 'SELECT') el.innerHTML = opts;
   });
+  // Default cmp-post to last phase if available
+  const postEl = document.getElementById('cmp-post');
+  if (postEl && phases.length > 1) postEl.value = phases[phases.length - 1];
+}
 
-  const labels = Object.keys(grouped);
-  const values = labels.map(k => avg(grouped[k]));
+// ── Chart 1: Variable trend (by phase, split by group) ──
+let chartInst = null;
+function updateChart() {
+  const varName   = document.getElementById('viz-var')?.value;
+  const chartType = document.getElementById('viz-type')?.value || 'bar';
+  const groupBy   = document.getElementById('viz-group')?.value || 'phase';
+  if (!varName || !MDATA.length) return;
 
   const ctx = document.getElementById('viz-chart');
   if (!ctx) return;
-  if (chartInst) chartInst.destroy();
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+
+  let labels, datasets;
+
+  if (groupBy === 'phase') {
+    // Multi-series: one line/bar per group, X = phases
+    const allPhases = [...new Set(MDATA.map(m => m.phase).filter(Boolean))].sort();
+    const allGroups = [...new Set(MDATA.map(m => m.group_name || '전체'))].sort();
+    labels = allPhases;
+    datasets = allGroups.map((grp, gi) => {
+      const data = allPhases.map(ph => {
+        const vals = MDATA.filter(m => (m.group_name||'전체')===grp && m.phase===ph)
+                          .map(m => parseFloat(m.data?.[varName])).filter(n=>!isNaN(n));
+        return avg(vals);
+      });
+      return {
+        label: grp,
+        data,
+        backgroundColor: COLORS[gi % COLORS.length] + (chartType==='bar'?'99':'22'),
+        borderColor: COLORS[gi % COLORS.length],
+        borderWidth: 2,
+        tension: 0.3,
+        fill: false,
+        pointRadius: 5,
+      };
+    });
+  } else {
+    // Per participant
+    const pCodes = [...new Set(MDATA.map(m => m.participant_code || m.participant_id?.slice(0,8)).filter(Boolean))];
+    labels = pCodes;
+    datasets = [{
+      label: VARIABLES.find(v=>v.name===varName)?.label || varName,
+      data: pCodes.map(code => {
+        const vals = MDATA.filter(m=>(m.participant_code||m.participant_id?.slice(0,8))===code)
+                         .map(m=>parseFloat(m.data?.[varName])).filter(n=>!isNaN(n));
+        return avg(vals);
+      }),
+      backgroundColor: 'rgba(15,107,107,0.55)',
+      borderColor: '#0F6B6B',
+      borderWidth: 2,
+      tension: 0.3,
+    }];
+  }
 
   chartInst = new Chart(ctx, {
     type: chartType,
-    data: {
-      labels,
-      datasets: [{
-        label: VARIABLES.find(v=>v.name===varName)?.label || varName,
-        data: values,
-        backgroundColor: 'rgba(15,107,107,0.2)',
-        borderColor: '#0F6B6B',
-        borderWidth: 2,
-        tension: 0.3,
-        fill: chartType === 'line',
-      }]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
-      scales: { y: { beginAtZero: false } }
+      plugins: { legend: { display: true }, tooltip: { mode: 'index', intersect: false } },
+      scales: { y: { beginAtZero: false, title: { display: true, text: VARIABLES.find(v=>v.name===varName)?.unit || '' } } }
     }
   });
 }
 
+// ── Chart 2: Pre/Post comparison by group ──
 let cmpInst = null;
 function updateCompareChart() {
-  const varName = document.getElementById('cmp-var')?.value;
-  const preLabel = document.getElementById('cmp-pre')?.value.trim() || '사전';
-  const postLabel = document.getElementById('cmp-post')?.value.trim() || '사후';
-  if (!varName) return;
+  const varName  = document.getElementById('cmp-var')?.value;
+  const preLabel = document.getElementById('cmp-pre')?.value || '';
+  const postLabel= document.getElementById('cmp-post')?.value || '';
+  const noDataEl = document.getElementById('cmp-no-data');
+  const ctx      = document.getElementById('cmp-chart');
+  if (!varName || !preLabel || !postLabel) return;
 
-  // Group by group_name → pre/post values
   const groups = {};
-  MEASUREMENTS.forEach(m => {
-    const val = m.data && m.data[varName];
+  MDATA.forEach(m => {
+    const val = m.data?.[varName];
     if (val === undefined || val === null) return;
-    const phase = m.phase || '';
-    if (phase !== preLabel && phase !== postLabel) return;
+    const ph  = m.phase || '';
+    if (ph !== preLabel && ph !== postLabel) return;
     const grp = m.group_name || '전체';
     if (!groups[grp]) groups[grp] = { pre: [], post: [] };
-    if (phase === preLabel) groups[grp].pre.push(parseFloat(val));
-    else groups[grp].post.push(parseFloat(val));
+    if (ph === preLabel)  groups[grp].pre.push(parseFloat(val));
+    else                  groups[grp].post.push(parseFloat(val));
   });
 
-  const groupNames = Object.keys(groups);
-  const noDataEl = document.getElementById('cmp-no-data');
-  const ctx = document.getElementById('cmp-chart');
-
+  const groupNames = Object.keys(groups).sort();
   if (!groupNames.length) {
-    noDataEl.style.display = 'block';
-    ctx.style.display = 'none';
-    if (cmpInst) { cmpInst.destroy(); cmpInst = null; }
-    return;
+    noDataEl.style.display = 'block'; ctx.style.display = 'none';
+    if (cmpInst) { cmpInst.destroy(); cmpInst = null; } return;
   }
-  noDataEl.style.display = 'none';
-  ctx.style.display = 'block';
-
+  noDataEl.style.display = 'none'; ctx.style.display = 'block';
   if (cmpInst) cmpInst.destroy();
+
   cmpInst = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -715,85 +863,90 @@ function updateCompareChart() {
         {
           label: preLabel,
           data: groupNames.map(g => avg(groups[g].pre)),
-          backgroundColor: 'rgba(15,107,107,0.6)',
-          borderColor: '#0F6B6B',
-          borderWidth: 2,
+          backgroundColor: 'rgba(15,107,107,0.65)',
+          borderColor: '#0F6B6B', borderWidth: 2,
         },
         {
           label: postLabel,
           data: groupNames.map(g => avg(groups[g].post)),
-          backgroundColor: 'rgba(230,126,34,0.6)',
-          borderColor: '#e67e22',
-          borderWidth: 2,
+          backgroundColor: 'rgba(230,126,34,0.65)',
+          borderColor: '#e67e22', borderWidth: 2,
         }
       ]
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: true }, tooltip: {
-        callbacks: {
-          afterLabel: ctx => {
-            const grp = groupNames[ctx.dataIndex];
-            const isPre = ctx.datasetIndex === 0;
-            const arr = isPre ? groups[grp].pre : groups[grp].post;
-            return `n = ${arr.length}`;
-          }
-        }
-      }},
+      plugins: {
+        legend: { display: true },
+        tooltip: { callbacks: { afterLabel: c => {
+          const g = groupNames[c.dataIndex];
+          const arr = c.datasetIndex===0 ? groups[g].pre : groups[g].post;
+          const m_val = avg(arr), sd_val = arr.length>1 ? Math.sqrt(arr.map(x=>(x-m_val)**2).reduce((a,b)=>a+b,0)/(arr.length-1)) : 0;
+          return `n=${arr.length}  SD=${sd_val.toFixed(2)}`;
+        }}}
+      },
       scales: { y: { beginAtZero: false } }
     }
   });
 }
 
+// ── Chart 3: Radar — all variables, split by group for a phase ──
 let radarInst = null;
 function populateRadarPhases() {
-  const sel = document.getElementById('radar-phase');
-  if (!sel) return;
-  const phases = [...new Set(MEASUREMENTS.map(m => m.phase || '미지정'))];
-  sel.innerHTML = phases.map(p => `<option value="${p}">${p}</option>`).join('');
+  populatePhaseDropdowns();
 }
 
 function updateRadar() {
-  const phase = document.getElementById('radar-phase')?.value;
+  const phase    = document.getElementById('radar-phase')?.value;
+  const noDataEl = document.getElementById('radar-no-data');
+  const ctx      = document.getElementById('radar-chart');
   if (!phase || !VARIABLES.length) return;
 
-  const filtered = MEASUREMENTS.filter(m => (m.phase || '미지정') === phase);
-  const noDataEl = document.getElementById('radar-no-data');
-  const ctx = document.getElementById('radar-chart');
+  const numVars   = VARIABLES.filter(v => v.var_type !== 'text');
+  const labels    = numVars.map(v => v.label || v.name);
+  const allGroups = [...new Set(MDATA.map(m => m.group_name || '전체'))].sort();
 
-  const labels = VARIABLES.map(v => v.label || v.name);
-  const values = VARIABLES.map(v => {
-    const vals = filtered.map(m => parseFloat(m.data?.[v.name])).filter(n => !isNaN(n));
-    return avg(vals);
+  // Normalize each variable to 0-100 range across ALL measurements for comparability
+  const varStats = {};
+  numVars.forEach(v => {
+    const allVals = MDATA.map(m=>parseFloat(m.data?.[v.name])).filter(n=>!isNaN(n));
+    varStats[v.name] = { min: Math.min(...allVals), max: Math.max(...allVals) };
   });
 
-  if (values.every(v => v === null)) {
-    noDataEl.style.display = 'block';
-    ctx.style.display = 'none';
-    if (radarInst) { radarInst.destroy(); radarInst = null; }
-    return;
-  }
-  noDataEl.style.display = 'none';
-  ctx.style.display = 'block';
+  const datasets = allGroups.map((grp, gi) => {
+    const filtered = MDATA.filter(m => m.phase===phase && (m.group_name||'전체')===grp);
+    const data = numVars.map(v => {
+      const vals = filtered.map(m=>parseFloat(m.data?.[v.name])).filter(n=>!isNaN(n));
+      const raw = avg(vals);
+      if (raw === null) return null;
+      const {min, max} = varStats[v.name];
+      return max > min ? parseFloat(((raw-min)/(max-min)*100).toFixed(1)) : 50;
+    });
+    return {
+      label: grp,
+      data,
+      backgroundColor: COLORS[gi%COLORS.length]+'33',
+      borderColor: COLORS[gi%COLORS.length],
+      borderWidth: 2,
+      pointBackgroundColor: COLORS[gi%COLORS.length],
+      pointRadius: 4,
+    };
+  }).filter(ds => ds.data.some(v=>v!==null));
 
+  if (!datasets.length) {
+    noDataEl.style.display='block'; ctx.style.display='none';
+    if (radarInst){radarInst.destroy();radarInst=null;} return;
+  }
+  noDataEl.style.display='none'; ctx.style.display='block';
   if (radarInst) radarInst.destroy();
+
   radarInst = new Chart(ctx, {
     type: 'radar',
-    data: {
-      labels,
-      datasets: [{
-        label: phase,
-        data: values,
-        backgroundColor: 'rgba(15,107,107,0.15)',
-        borderColor: '#0F6B6B',
-        borderWidth: 2,
-        pointBackgroundColor: '#0F6B6B',
-      }]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
-      scales: { r: { beginAtZero: false } }
+      plugins: { legend:{display:true}, tooltip:{callbacks:{label: c => `${c.dataset.label}: ${c.raw}% (정규화)`}} },
+      scales: { r: { min:0, max:100, ticks:{stepSize:20}, pointLabels:{font:{size:11}} } }
     }
   });
 }
@@ -886,10 +1039,33 @@ function clearMeasurementFilters() {
   filterMeasurements();
 }
 
+function checkDuplicate() {
+  const pid   = (document.getElementById('add-m-participant')?.value || '').trim();
+  const phase = (document.getElementById('add-m-phase')?.value || '').trim();
+  const warn  = document.getElementById('duplicate-warning');
+  if (!warn) return;
+  if (pid && phase) {
+    const exists = MEASUREMENTS.some(m => m.participant_id === pid && m.phase === phase && !m.excluded);
+    warn.style.display = exists ? 'block' : 'none';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('open'));
   });
+  // Activate tab from URL hash (e.g. #tab-settings)
+  const hash = location.hash;
+  if (hash && hash.startsWith('#tab-')) {
+    const tabName = hash.slice(5);
+    const tabEl = document.getElementById('tab-' + tabName);
+    if (tabEl) {
+      const btn = document.querySelector(`[onclick*="showTab('${tabName}'"]`);
+      showTab(tabName, btn);
+    }
+  }
   if (MEASUREMENTS.length && VARIABLES.length) {
     updateChart();
     updateCompareChart();
