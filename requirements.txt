@@ -7,3 +7,4 @@ numpy>=1.26
 flask-wtf>=1.2
 flask-limiter>=3.5
 flask-mail>=0.9
+requests>=2.31

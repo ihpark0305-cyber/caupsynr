@@ -3,6 +3,7 @@ from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
 import os, sqlite3, uuid as _uuid, json, csv, io, re
+import requests as _requests
 from scipy import stats as _scipy_stats
 import numpy as _np
 from datetime import datetime, timedelta
@@ -13,6 +14,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+_USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "tsl-dev-secret-2025")
@@ -62,6 +67,8 @@ def save_extra_pubs(data):
 
 def init_db():
     os.makedirs(PORTAL_FILES_DIR, exist_ok=True)
+    if _USE_SUPABASE:
+        return  # Tables managed in Supabase; skip local SQLite init
     with sqlite3.connect(DB_PATH) as conn:
         conn.executescript('''
             CREATE TABLE IF NOT EXISTS projects (
@@ -169,7 +176,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS project_protocols (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
-                phase TEXT NOT NULL,
+                phase_name TEXT NOT NULL,
                 description TEXT,
                 due_offset_days INTEGER DEFAULT 0,
                 sort_order INTEGER DEFAULT 0
@@ -221,12 +228,16 @@ def audit(action, table=None, target_id=None, detail=None, before=None, after=No
         researcher = session.get("researcher", "system")
         before_val = json.dumps(before, ensure_ascii=False) if before is not None else None
         after_val  = json.dumps(after,  ensure_ascii=False) if after  is not None else None
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute(
-                "INSERT INTO audit_log (researcher,action,target_table,target_id,detail,before_val,after_val) VALUES (?,?,?,?,?,?,?)",
-                (researcher, action, table, target_id, detail, before_val, after_val)
-            )
-            conn.commit()
+        sb("POST", "audit_log", data={
+            "id": str(_uuid.uuid4()),
+            "researcher": researcher,
+            "action": action,
+            "target_table": table,
+            "target_id": target_id,
+            "detail": detail,
+            "before_val": before_val,
+            "after_val": after_val,
+        })
     except Exception:
         pass
 
@@ -263,10 +274,52 @@ def _parse_sb_params(params):
             filters[key] = val[3:]
     return filters, order_by, select_fields
 
-def sb(method, table, data=None, params=""):
+def _sb_headers(prefer=None):
+    h = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if prefer:
+        h["Prefer"] = prefer
+    return h
+
+def sb(method, table, data=None, params="", upsert=False):
     if table not in _ALLOWED_TABLES:
         print(f"DB error: disallowed table '{table}'")
         return []
+
+    # ── Supabase REST API mode ──────────────────────────
+    if _USE_SUPABASE:
+        url = f"{SUPABASE_URL}/rest/v1/{table}{params}"
+        try:
+            if method == "GET":
+                r = _requests.get(url, headers=_sb_headers(), timeout=10)
+                r.raise_for_status()
+                return r.json() or []
+            elif method == "POST":
+                d = dict(data or {})
+                d.setdefault("id", str(_uuid.uuid4()))
+                prefer = ("resolution=merge-duplicates,return=representation"
+                          if upsert else "return=representation")
+                r = _requests.post(url, headers=_sb_headers(prefer), json=d, timeout=10)
+                r.raise_for_status()
+                result = r.json()
+                return result if isinstance(result, list) else ([result] if result else [])
+            elif method == "PATCH":
+                r = _requests.patch(url, headers=_sb_headers("return=minimal"),
+                                    json=dict(data or {}), timeout=10)
+                r.raise_for_status()
+                return []
+            elif method == "DELETE":
+                r = _requests.delete(url, headers=_sb_headers(), timeout=10)
+                r.raise_for_status()
+                return []
+        except Exception as e:
+            print(f"Supabase error [{method} {table}]: {e}")
+            return []
+
+    # ── SQLite fallback (local dev) ─────────────────────
     filters, order_by, select_fields = _parse_sb_params(params)
     conn = None
     try:
@@ -296,7 +349,15 @@ def sb(method, table, data=None, params=""):
             if "data" in d and isinstance(d["data"], dict):
                 d["data"] = json.dumps(d["data"], ensure_ascii=False)
             cols = list(d.keys())
-            conn.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})", [d[c] for c in cols])
+            if upsert:
+                non_pk = [c for c in cols if c != "id"]
+                conn.execute(
+                    f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))}) "
+                    f"ON CONFLICT(id) DO UPDATE SET {', '.join(f'{c}=excluded.{c}' for c in non_pk)}",
+                    [d[c] for c in cols])
+            else:
+                conn.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
+                             [d[c] for c in cols])
             conn.commit()
             row = conn.execute(f"SELECT * FROM {table} WHERE id=?", [d["id"]]).fetchone()
             if row:
@@ -327,22 +388,38 @@ def sb(method, table, data=None, params=""):
     finally:
         if conn: conn.close()
 
+def _sb_count(table, params=""):
+    """Return total row count for a table. Used for pagination."""
+    if _USE_SUPABASE:
+        url = f"{SUPABASE_URL}/rest/v1/{table}{params if params else '?select=id'}"
+        if "select=" not in url:
+            url = url + ("&" if "?" in url else "?") + "select=id"
+        try:
+            r = _requests.get(url, headers={**_sb_headers(), "Prefer": "count=exact"}, timeout=10)
+            cr = r.headers.get("Content-Range", "0/0")
+            return int(cr.split("/")[-1]) if "/" in cr else 0
+        except Exception:
+            return 0
+    else:
+        try:
+            with sqlite3.connect(DB_PATH) as conn:
+                return conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        except Exception:
+            return 0
+
 init_db()
 
 def _get_account(email):
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT password FROM accounts WHERE email=?", (email,)).fetchone()
-        return row[0] if row else None
+    rows = sb("GET", "accounts", params=f"?email=eq.{email}&select=password")
+    return rows[0]["password"] if rows else None
 
 def _set_account(email, password, already_hashed=False):
     hashed = password if already_hashed else generate_password_hash(password)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("INSERT INTO accounts (email,password) VALUES (?,?) ON CONFLICT(email) DO UPDATE SET password=excluded.password", (email, hashed))
-        conn.commit()
+    sb("POST", "accounts", data={"email": email, "password": hashed}, upsert=True)
 
 def _account_exists(email):
-    with sqlite3.connect(DB_PATH) as conn:
-        return conn.execute("SELECT 1 FROM accounts WHERE email=?", (email,)).fetchone() is not None
+    rows = sb("GET", "accounts", params=f"?email=eq.{email}&select=email")
+    return bool(rows)
 
 def login_required(f):
     @wraps(f)
@@ -361,11 +438,8 @@ def _require_project_owner(project_id):
     email = session.get("researcher","")
     # Allow owner OR collaborator with any role
     if owner != email:
-        with sqlite3.connect(DB_PATH) as _c:
-            row = _c.execute(
-                "SELECT role FROM project_collaborators WHERE project_id=? AND researcher_email=?",
-                (project_id, email)
-            ).fetchone()
+        row = sb("GET", "project_collaborators",
+                 params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}&select=role")
         if not row:
             flash("이 프로젝트에 접근 권한이 없어요.")
             return None, redirect(url_for("portal"))
@@ -607,10 +681,9 @@ def home():
 def research():
     extras = {}
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-            for row in conn.execute("SELECT * FROM research_topics_extra").fetchall():
-                extras[row['key']] = dict(row)
+        rows = sb("GET", "research_topics_extra", params="") or []
+        for row in (rows if isinstance(rows, list) else []):
+            extras[row['key']] = row
     except: pass
     merged = []
     for r in RESEARCH_TOPICS:
@@ -704,12 +777,9 @@ def contact():
         subject = request.form.get("subject","").strip()
         message = request.form.get("message","").strip()
         if message:
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.execute(
-                    "INSERT INTO contact_messages (id,name,email,subject,message) VALUES (?,?,?,?,?)",
-                    (str(_uuid.uuid4()), name, email, subject, message)
-                )
-                conn.commit()
+            sb("POST", "contact_messages", data={
+                "name": name, "email": email, "subject": subject, "message": message
+            })
             success = True
         else:
             flash("메시지를 입력해주세요.")
@@ -855,12 +925,10 @@ def portal_project(project_id):
         m["group_name"] = info.get("group_name", "")
     for p in (participants if isinstance(participants,list) else []):
         p["mcount"] = sum(1 for m in (measurements_raw if isinstance(measurements_raw,list) else []) if m.get("participant_id")==p["id"])
-    with sqlite3.connect(DB_PATH) as _c:
-        _c.row_factory = sqlite3.Row
-        collaborators = [dict(r) for r in _c.execute(
-            "SELECT * FROM project_collaborators WHERE project_id=? ORDER BY invited_at", (project_id,)).fetchall()]
-        protocols = [dict(r) for r in _c.execute(
-            "SELECT * FROM project_protocols WHERE project_id=? ORDER BY sort_order", (project_id,)).fetchall()]
+    collaborators = sb("GET", "project_collaborators",
+                       params=f"?project_id=eq.{project_id}&order=invited_at.asc") or []
+    protocols = sb("GET", "project_protocols",
+                   params=f"?project_id=eq.{project_id}&order=sort_order.asc") or []
     is_owner = project.get("researcher_email") == session.get("researcher")
     return render_template("portal_project.html",
         project=project,
@@ -1313,10 +1381,9 @@ def portal_outliers_exclude(project_id):
     if err: return err
     ids = request.form.getlist("measurement_ids")
     if ids:
-        with sqlite3.connect(DB_PATH) as conn:
-            for mid in ids:
-                conn.execute("UPDATE measurements SET excluded=1 WHERE id=? AND project_id=?", (mid, project_id))
-            conn.commit()
+        for mid in ids:
+            sb("PATCH", "measurements", data={"excluded": 1},
+               params=f"?id=eq.{mid}&project_id=eq.{project_id}")
     flash(f"{len(ids)}건의 이상값을 제외 처리했습니다.")
     return redirect(url_for("portal_project_stats", project_id=project_id))
 
@@ -1838,42 +1905,30 @@ def portal_all_participants():
 @app.route("/portal/all/sessions")
 @login_required
 def portal_all_sessions():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("""
-            SELECT s.*, pp.code as participant_code
-            FROM sessions s
-            LEFT JOIN project_participants pp ON pp.id = s.participant_id
-            ORDER BY s.received_at DESC
-        """).fetchall()
-    session_list = []
-    for r in rows:
-        d = dict(r)
-        if isinstance(d.get("data"), str):
-            try: d["data"] = json.loads(d["data"])
-            except: pass
-        session_list.append(d)
-    return render_template("portal_sessions.html",researcher=session["researcher"],
+    session_list = sb("GET", "sessions", params="?order=received_at.desc") or []
+    if session_list:
+        all_parts = sb("GET", "project_participants", params="?select=id,code") or []
+        p_map = {p["id"]: p["code"] for p in (all_parts if isinstance(all_parts, list) else [])}
+        for s in session_list:
+            s["participant_code"] = p_map.get(s.get("participant_id", ""), "")
+    return render_template("portal_sessions.html", researcher=session["researcher"],
         sessions=session_list)
 
 @app.route("/api/sessions", methods=["POST"])
 def api_receive_session():
     if request.headers.get("X-API-Key","")!=os.getenv("APP_API_KEY","tsl-app-key-2025"):
         return jsonify({"error":"Unauthorized"}),401
-    payload=request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True) or {}
     sid = str(_uuid.uuid4())
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("""INSERT INTO sessions (id,project_id,participant_id,phase,notes,data)
-            VALUES (?,?,?,?,?,?)""", (
-            sid,
-            payload.get("project_id"),
-            payload.get("participant_id"),
-            payload.get("phase",""),
-            payload.get("notes",""),
-            json.dumps(payload.get("data",{}), ensure_ascii=False)
-        ))
-        conn.commit()
-    return jsonify({"ok":True,"id":sid}),201
+    sb("POST", "sessions", data={
+        "id":             sid,
+        "project_id":     payload.get("project_id"),
+        "participant_id": payload.get("participant_id"),
+        "phase":          payload.get("phase", ""),
+        "notes":          payload.get("notes", ""),
+        "data":           payload.get("data", {}),
+    })
+    return jsonify({"ok": True, "id": sid}), 201
 
 # ── Project meta edit ────────────────────────────────
 @app.route("/portal/projects/<project_id>/edit", methods=["POST"])
@@ -2069,13 +2124,9 @@ def api_docs():
 def portal_research_edit(key):
     summary = request.form.get("summary","").strip()
     detail  = request.form.get("detail","").strip()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO research_topics_extra (key,summary,detail) VALUES (?,?,?) "
-            "ON CONFLICT(key) DO UPDATE SET summary=excluded.summary, detail=excluded.detail",
-            (key, summary, detail)
-        )
-        conn.commit()
+    sb("POST", "research_topics_extra",
+       data={"key": key, "summary": summary, "detail": detail},
+       upsert=True)
     flash("연구 소개가 수정됐어요.")
     return redirect(url_for("research") + f"#{key}")
 
@@ -2083,11 +2134,7 @@ def portal_research_edit(key):
 @app.route("/portal/contacts")
 @login_required
 def portal_contacts():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        msgs = [dict(r) for r in conn.execute(
-            "SELECT * FROM contact_messages ORDER BY created_at DESC"
-        ).fetchall()]
+    msgs = sb("GET", "contact_messages", params="?order=created_at.desc") or []
     return render_template("portal_contacts.html", messages=msgs, researcher=session["researcher"])
 
 @app.route("/portal/audit")
@@ -2095,13 +2142,10 @@ def portal_contacts():
 def portal_audit():
     PAGE_SIZE = 50
     page = max(1, request.args.get("page", 1, type=int))
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        total = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
-        logs = [dict(r) for r in conn.execute(
-            "SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (PAGE_SIZE, (page - 1) * PAGE_SIZE)
-        ).fetchall()]
+    total = _sb_count("audit_log")
+    offset = (page - 1) * PAGE_SIZE
+    logs = sb("GET", "audit_log",
+              params=f"?order=created_at.desc&limit={PAGE_SIZE}&offset={offset}") or []
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return render_template("portal_audit.html", logs=logs, researcher=session["researcher"],
                            page=page, total_pages=total_pages, total=total)
@@ -2124,16 +2168,14 @@ def portal_project_add_collaborator(project_id):
     if email == session.get("researcher"):
         flash("본인을 협력자로 초대할 수 없어요.")
         return redirect(url_for("portal_project", project_id=project_id))
-    with sqlite3.connect(DB_PATH) as conn:
-        existing = conn.execute(
-            "SELECT id FROM project_collaborators WHERE project_id=? AND researcher_email=?",
-            (project_id, email)).fetchone()
-        if existing:
-            flash(f"{email}는 이미 협력자로 등록되어 있어요.")
-            return redirect(url_for("portal_project", project_id=project_id))
-        conn.execute(
-            "INSERT INTO project_collaborators(id,project_id,researcher_email,role) VALUES(?,?,?,?)",
-            (str(uuid.uuid4()), project_id, email, role))
+    existing = sb("GET", "project_collaborators",
+                  params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}&select=id")
+    if existing:
+        flash(f"{email}는 이미 협력자로 등록되어 있어요.")
+        return redirect(url_for("portal_project", project_id=project_id))
+    sb("POST", "project_collaborators", data={
+        "project_id": project_id, "researcher_email": email, "role": role
+    })
     audit("collaborator_add", "project_collaborators", project_id,
           after={"email": email, "role": role})
     flash(f"{email}를 {role} 역할로 초대했어요.")
@@ -2148,10 +2190,8 @@ def portal_project_remove_collaborator(project_id):
         flash("프로젝트 소유자만 협력자를 제거할 수 있어요.")
         return redirect(url_for("portal_project", project_id=project_id))
     email = (request.form.get("collaborator_email") or "").strip().lower()
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "DELETE FROM project_collaborators WHERE project_id=? AND researcher_email=?",
-            (project_id, email))
+    sb("DELETE", "project_collaborators",
+       params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}")
     audit("collaborator_remove", "project_collaborators", project_id, before={"email": email})
     flash(f"{email}를 협력자 목록에서 제거했어요.")
     return redirect(url_for("portal_project", project_id=project_id))
@@ -2164,12 +2204,11 @@ def portal_project_protocols_save(project_id):
     if err: return err
     phases_raw = request.form.get("phases", "")
     phases = [p.strip() for p in phases_raw.split(",") if p.strip()]
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM project_protocols WHERE project_id=?", (project_id,))
-        for i, phase in enumerate(phases):
-            conn.execute(
-                "INSERT INTO project_protocols(id,project_id,phase_name,sort_order) VALUES(?,?,?,?)",
-                (str(uuid.uuid4()), project_id, phase, i))
+    sb("DELETE", "project_protocols", params=f"?project_id=eq.{project_id}")
+    for i, phase in enumerate(phases):
+        sb("POST", "project_protocols", data={
+            "project_id": project_id, "phase_name": phase, "sort_order": i
+        })
     audit("protocol_save", "project_protocols", project_id, after={"phases": phases})
     flash("프로토콜 단계가 저장되었어요.")
     return redirect(url_for("portal_project", project_id=project_id) + "#tab-settings")
@@ -2179,15 +2218,14 @@ def portal_project_protocols_save(project_id):
 def reset_password_request():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
-        with sqlite3.connect(DB_PATH) as conn:
-            acct = conn.execute("SELECT id FROM accounts WHERE email=?", (email,)).fetchone()
+        acct = sb("GET", "accounts", params=f"?email=eq.{email}&select=email")
         if acct:
-            token = str(uuid.uuid4())
+            token = str(_uuid.uuid4())
             expires = (datetime.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")
-            with sqlite3.connect(DB_PATH) as conn:
-                conn.execute("DELETE FROM reset_tokens WHERE email=?", (email,))
-                conn.execute("INSERT INTO reset_tokens(token,email,expires_at) VALUES(?,?,?)",
-                             (token, email, expires))
+            sb("DELETE", "reset_tokens", params=f"?email=eq.{email}")
+            sb("POST", "reset_tokens", data={
+                "token": token, "email": email, "expires_at": expires
+            })
             reset_url = url_for("reset_password_confirm", token=token, _external=True)
             flash(f"비밀번호 재설정 링크가 생성되었어요. (개발 환경: {reset_url})")
         else:
@@ -2197,12 +2235,11 @@ def reset_password_request():
 
 @app.route("/reset-password/<token>", methods=["GET","POST"])
 def reset_password_confirm(token):
-    with sqlite3.connect(DB_PATH) as conn:
-        row = conn.execute("SELECT email, expires_at FROM reset_tokens WHERE token=?", (token,)).fetchone()
-    if not row:
+    rows = sb("GET", "reset_tokens", params=f"?token=eq.{token}&select=email,expires_at")
+    if not rows:
         flash("유효하지 않거나 이미 사용된 링크예요.")
         return redirect(url_for("login"))
-    email, expires_at = row
+    email, expires_at = rows[0]["email"], rows[0]["expires_at"]
     if datetime.now() > datetime.strptime(expires_at, "%Y-%m-%dT%H:%M:%S"):
         flash("링크가 만료되었어요. 다시 요청해 주세요.")
         return redirect(url_for("reset_password_request"))
@@ -2211,10 +2248,10 @@ def reset_password_confirm(token):
         if len(pw) < 8:
             flash("비밀번호는 8자 이상이어야 해요.")
             return render_template("reset_password_confirm.html", token=token)
-        hashed = bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("UPDATE accounts SET password_hash=? WHERE email=?", (hashed, email))
-            conn.execute("DELETE FROM reset_tokens WHERE token=?", (token,))
+        sb("PATCH", "accounts",
+           data={"password": generate_password_hash(pw)},
+           params=f"?email=eq.{email}")
+        sb("DELETE", "reset_tokens", params=f"?token=eq.{token}")
         flash("비밀번호가 재설정되었어요. 로그인해 주세요.")
         return redirect(url_for("login"))
     return render_template("reset_password_confirm.html", token=token)
