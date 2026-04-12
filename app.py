@@ -1274,12 +1274,12 @@ def portal_project_upload(project_id):
 
     # 나머지 컬럼 → 변수로 등록
     data_cols = [h for h in all_headers if h not in skip_cols and h]
-    existing_vars = sb('GET', 'projectvariables', params=f'?projectid=eq.{project_id}') or []
+    existing_vars = sb('GET', 'project_variables', params=f'?projectid=eq.{project_id}') or []
     existing_var_names = {v['name'] for v in existing_vars if isinstance(existing_vars, list)}
     for h in data_cols:
         vname = slugify(h)
         if vname not in existing_var_names:
-            sb('POST', 'projectvariables', data={
+            sb('POST', 'project_variables', data={
                 'projectid': project_id,
                 'name': vname,
                 'label': h[:80],
@@ -1289,7 +1289,7 @@ def portal_project_upload(project_id):
             existing_var_names.add(vname)
 
     # 기존 참여자 목록
-    existing = sb('GET', 'projectparticipants', params=f'?projectid=eq.{project_id}') or []
+    existing = sb('GET', 'project_participants', params=f'?projectid=eq.{project_id}') or []
     pmap = {p['code']: p['id'] for p in existing if isinstance(existing, list)}
 
     added_p = added_m = 0
@@ -1315,7 +1315,7 @@ def portal_project_upload(project_id):
             age_raw = str(row.get(next((h for h in all_headers if known_map.get(h) == 'age'), ''), '')).strip()
             age = int(age_raw) if age_raw.isdigit() and 1 <= int(age_raw) <= 120 else None
             group = str(row.get(next((h for h in all_headers if known_map.get(h) == 'group'), ''), '')).strip() or None
-            newp = sb('POST', 'projectparticipants', data={
+            newp = sb('POST', 'project_participants', data={
                 'projectid': project_id, 'code': code,
                 'gender': gender, 'age': age, 'groupname': group
             })
