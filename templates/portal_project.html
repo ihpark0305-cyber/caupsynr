@@ -86,7 +86,8 @@
       <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:20px;margin-bottom:14px;">
       <p style="font-size:.85rem;font-weight:600;margin-bottom:10px;">Excel/CSV 일괄 업로드</p>
       <form action="{{ url_for('portal_project_upload', project_id=project.id) }}" method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;">
-        <input type="file" name="file" accept=".csv,.xlsx,.xls" style="font-size:.83rem;flex:1;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+         <input type="file" name="file" accept=".csv,.xlsx,.xls" style="font-size:.83rem;flex:1;">
         <button type="submit" class="btn btn-outline" style="font-size:.83rem;white-space:nowrap;">업로드</button>
       </form>
       <p style="font-size:.75rem;color:var(--muted);margin-top:8px;">컬럼: code, gender, age, group, phase, notes + 변수명들</p>

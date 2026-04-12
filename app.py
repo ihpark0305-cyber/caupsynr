@@ -414,7 +414,7 @@ def _get_account(email):
     return rows[0]["password"] if rows else None
 
 def _set_account(email, password, already_hashed=False):
-    hashed = password if already_hashed else generate_password_hash(password)
+    hashed = password if already_hashed else generate_password_hash(password, method='pbkdf2:sha256')
     sb("POST", "accounts", data={"email": email, "password": hashed}, upsert=True)
 
 def _account_exists(email):
@@ -2249,7 +2249,7 @@ def reset_password_confirm(token):
             flash("비밀번호는 8자 이상이어야 해요.")
             return render_template("reset_password_confirm.html", token=token)
         sb("PATCH", "accounts",
-           data={"password": generate_password_hash(pw)},
+           data={"password": generate_password_hash(pw, method='pbkdf2:sha256')},
            params=f"?email=eq.{email}")
         sb("DELETE", "reset_tokens", params=f"?token=eq.{token}")
         flash("비밀번호가 재설정되었어요. 로그인해 주세요.")
