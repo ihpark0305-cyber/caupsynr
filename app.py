@@ -1201,95 +1201,159 @@ def portal_project_export_range(project_id):
     return Response(output.getvalue(), mimetype="text/csv;charset=utf-8-sig",
         headers={"Content-Disposition":f"attachment;filename={safe}_range_{datetime.now().strftime('%Y%m%d')}.csv"})
 
-@app.route("/portal/projects/<project_id>/upload", methods=["POST"])
+@app.route('/portal/projects/<project_id>/upload', methods=['POST'])
 @login_required
 def portal_project_upload(project_id):
     _, err = _require_project_owner(project_id)
     if err: return err
-    f = request.files.get("file")
+    f = request.files.get('file')
     if not f or not f.filename:
-        flash("파일을 선택해주세요.")
-        return redirect(url_for("portal_project", project_id=project_id))
+        flash('파일을 선택해주세요.')
+        return redirect(url_for('portal_project', project_id=project_id))
     fname = f.filename.lower()
     rows = []
-    tmp_path = None
+    tmppath = None
     try:
-        if fname.endswith(".csv"):
-            content = f.read().decode("utf-8-sig")
+        if fname.endswith('.csv'):
+            content = f.read().decode('utf-8-sig')
             reader = csv.DictReader(io.StringIO(content))
             rows = list(reader)
-        elif fname.endswith((".xlsx",".xls")):
+        elif fname.endswith(('.xlsx', '.xls')):
             import tempfile, openpyxl
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-                tmp_path = tmp.name
-                f.save(tmp_path)
-            wb = openpyxl.load_workbook(tmp_path, read_only=True)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+                tmppath = tmp.name
+                f.save(tmppath)
+            wb = openpyxl.load_workbook(tmppath, read_only=True)
             ws = wb.active
-            headers = [str(c.value or "").strip() for c in next(ws.iter_rows(max_row=1))]
+            headers = [str(c.value or '').strip() for c in next(ws.iter_rows(max_row=1))]
             for row in ws.iter_rows(min_row=2, values_only=True):
-                rows.append({headers[i]: (str(v).strip() if v is not None else "") for i,v in enumerate(row)})
+                rows.append({headers[i]: str(v).strip() if v is not None else '' for i, v in enumerate(row)})
             wb.close()
         else:
-            flash("CSV 또는 Excel 파일만 업로드 가능해요.")
-            return redirect(url_for("portal_project", project_id=project_id))
+            flash('CSV 또는 Excel 파일만 업로드 가능해요.')
+            return redirect(url_for('portal_project', project_id=project_id))
     except Exception as e:
-        flash(f"파일 읽기 오류: {e}")
-        return redirect(url_for("portal_project", project_id=project_id))
+        flash(f'파일 읽기 오류: {e}')
+        return redirect(url_for('portal_project', project_id=project_id))
     finally:
-        if tmp_path and os.path.exists(tmp_path):
-            try: os.unlink(tmp_path)
+        if tmppath and os.path.exists(tmppath):
+            try: os.unlink(tmppath)
             except: pass
 
-    variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
-    var_names = [v["name"] for v in (variables if isinstance(variables,list) else [])]
-    var_types = {v["name"]: v.get("var_type","number") for v in (variables if isinstance(variables,list) else [])}
-    existing = sb("GET","project_participants",params=f"?project_id=eq.{project_id}") or []
-    p_map = {p["code"]: p["id"] for p in (existing if isinstance(existing,list) else [])}
+    if not rows:
+        flash('데이터가 없습니다.')
+        return redirect(url_for('portal_project', project_id=project_id))
+
+    # 컬럼명 정규화 (변수명으로 쓸 수 있게: 영숫자+언더스코어)
+    def slugify(s):
+        s = re.sub(r'\s+', '_', s.strip())
+        s = re.sub(r'[^\w가-힣]', '', s)
+        return s[:40] or 'col'
+
+    all_headers = list(rows[0].keys())
+
+    # code 컬럼 찾기 (없으면 자동 생성)
+    code_col = None
+    for h in all_headers:
+        if h.lower() in ('code', '코드', '이름', 'name', '참여자'):
+            code_col = h
+            break
+
+    # 제외할 메타 컬럼 (이미 알려진 것들)
+    skip_cols = {code_col} if code_col else set()
+    known_map = {}  # header → field
+    for h in all_headers:
+        hl = h.lower()
+        if hl in ('gender', '성별'): known_map[h] = 'gender'
+        elif hl in ('age', '나이', '연령'): known_map[h] = 'age'
+        elif hl in ('group', '그룹', '군'): known_map[h] = 'group'
+        elif hl in ('phase', '단계', '차수'): known_map[h] = 'phase'
+        elif hl in ('notes', '메모', '비고'): known_map[h] = 'notes'
+        elif hl in ('타임스탬프', 'timestamp'): skip_cols.add(h)
+    skip_cols.update(known_map.keys())
+
+    # 나머지 컬럼 → 변수로 등록
+    data_cols = [h for h in all_headers if h not in skip_cols and h]
+    existing_vars = sb('GET', 'projectvariables', params=f'?projectid=eq.{project_id}') or []
+    existing_var_names = {v['name'] for v in existing_vars if isinstance(existing_vars, list)}
+    for h in data_cols:
+        vname = slugify(h)
+        if vname not in existing_var_names:
+            sb('POST', 'projectvariables', data={
+                'projectid': project_id,
+                'name': vname,
+                'label': h[:80],
+                'vartype': 'text',
+                'unit': None
+            })
+            existing_var_names.add(vname)
+
+    # 기존 참여자 목록
+    existing = sb('GET', 'projectparticipants', params=f'?projectid=eq.{project_id}') or []
+    pmap = {p['code']: p['id'] for p in existing if isinstance(existing, list)}
+
     added_p = added_m = 0
     row_errors = []
+
     for i, row in enumerate(rows, start=2):
-        code = str(row.get("code") or row.get("참여자코드") or "").strip()
+        # 빈 행 스킵
+        if all(not str(v).strip() for v in row.values()):
+            continue
+
+        # 참여자 코드 결정
+        if code_col:
+            code = str(row.get(code_col, '')).strip()
+        else:
+            code = f'P{i-1:03d}'
         if not code:
-            row_errors.append(f"행{i}: 코드 누락"); continue
-        if len(code) > 50:
-            row_errors.append(f"행{i}: 코드 너무 길어요 ({code[:12]}…)"); continue
-        if code not in p_map:
-            age_raw = str(row.get("age") or row.get("나이") or "").strip()
-            age_val = int(age_raw) if age_raw.isdigit() and 1 <= int(age_raw) <= 120 else None
-            new_p = sb("POST","project_participants",data={
-                "project_id": project_id, "code": code,
-                "gender":     str(row.get("gender") or row.get("성별") or "").strip() or None,
-                "age":        age_val,
-                "group_name": str(row.get("group") or row.get("그룹") or "").strip() or None,
+            code = f'P{i-1:03d}'
+        code = code[:50]
+
+        # 참여자 등록
+        if code not in pmap:
+            gender = str(row.get(next((h for h in all_headers if known_map.get(h) == 'gender'), ''), '')).strip() or None
+            age_raw = str(row.get(next((h for h in all_headers if known_map.get(h) == 'age'), ''), '')).strip()
+            age = int(age_raw) if age_raw.isdigit() and 1 <= int(age_raw) <= 120 else None
+            group = str(row.get(next((h for h in all_headers if known_map.get(h) == 'group'), ''), '')).strip() or None
+            newp = sb('POST', 'projectparticipants', data={
+                'projectid': project_id, 'code': code,
+                'gender': gender, 'age': age, 'groupname': group
             })
-            if new_p and isinstance(new_p, list):
-                p_map[code] = new_p[0]["id"]; added_p += 1
+            if newp and isinstance(newp, list):
+                pmap[code] = newp[0]['id']
+                added_p += 1
             else:
-                row_errors.append(f"행{i}: 참여자 저장 실패 ({code})"); continue
-        pid = p_map.get(code)
+                row_errors.append(f'{i}행: 참여자 등록 실패')
+                continue
+
+        pid = pmap.get(code)
         if not pid:
-            row_errors.append(f"행{i}: 참여자 ID 없음 ({code})"); continue
-        phase = str(row.get("phase") or row.get("회차") or "").strip() or None
-        notes = str(row.get("notes") or row.get("메모") or "").strip() or None
-        data_dict = {}
-        skip = {"code","참여자코드","gender","성별","age","나이","group","그룹","group_name","phase","회차","notes","메모"}
-        for k, v in row.items():
-            if k not in skip and v:
-                if var_types.get(k,"number") == "number":
-                    try: data_dict[k] = float(v)
-                    except: row_errors.append(f"행{i}: {k} 값 '{v}' 숫자 변환 실패")
-                else:
-                    data_dict[k] = str(v)
-        if data_dict:
-            sb("POST","measurements",data={"project_id":project_id,"participant_id":pid,
-                                           "phase":phase,"notes":notes,"data":data_dict})
-            added_m += 1
-    msg = f"업로드 완료 — 참여자 {added_p}명, 측정 {added_m}건 추가"
+            continue
+
+        # 측정 데이터 구성
+        phase = str(row.get(next((h for h in all_headers if known_map.get(h) == 'phase'), ''), '')).strip() or None
+        notes = str(row.get(next((h for h in all_headers if known_map.get(h) == 'notes'), ''), '')).strip() or None
+        datadict = {}
+        for h in data_cols:
+            vname = slugify(h)
+            val = str(row.get(h, '')).strip()
+            if val:
+                datadict[vname] = val
+
+        sb('POST', 'measurements', data={
+            'projectid': project_id,
+            'participantid': pid,
+            'phase': phase,
+            'notes': notes,
+            'data': datadict
+        })
+        added_m += 1
+
+    msg = f'완료! 참여자 {added_p}명 추가, 측정 {added_m}건 저장.'
     if row_errors:
-        msg += f" / 오류 {len(row_errors)}건: " + "; ".join(row_errors[:5])
-        if len(row_errors) > 5: msg += f" 외 {len(row_errors)-5}건"
+        msg += f' 오류 {len(row_errors)}건: {", ".join(row_errors[:3])}'
     flash(msg)
-    return redirect(url_for("portal_project", project_id=project_id))
+    return redirect(url_for('portal_project', project_id=project_id))
 
 @app.route("/portal/projects/<project_id>/stats")
 @login_required
