@@ -70,6 +70,10 @@ def save_extra_pubs(data):
 def init_db():
     os.makedirs(PORTAL_FILES_DIR, exist_ok=True)
     if _USE_SUPABASE:
+        # Seed default account if none exists
+        if not sb("GET", "accounts", params="?select=email&limit=1"):
+            _set_account(os.getenv("PORTAL_EMAIL","admin@example.com"),
+                         os.getenv("PORTAL_PASSWORD","changeme123"))
         return  # Tables managed in Supabase; skip local SQLite init
     with sqlite3.connect(DB_PATH) as conn:
         conn.executescript('''
@@ -301,7 +305,8 @@ def sb(method, table, data=None, params="", upsert=False):
                 return r.json() or []
             elif method == "POST":
                 d = dict(data or {})
-                d.setdefault("id", str(_uuid.uuid4()))
+                if table != "accounts":
+                    d.setdefault("id", str(_uuid.uuid4()))
                 prefer = ("resolution=merge-duplicates,return=representation"
                           if upsert else "return=representation")
                 r = _requests.post(url, headers=_sb_headers(prefer), json=d, timeout=10)
@@ -347,21 +352,25 @@ def sb(method, table, data=None, params="", upsert=False):
         elif method == "POST":
             if not data: return []
             d = dict(data)
-            d.setdefault("id", str(_uuid.uuid4()))
+            if table != "accounts":
+                d.setdefault("id", str(_uuid.uuid4()))
             if "data" in d and isinstance(d["data"], dict):
                 d["data"] = json.dumps(d["data"], ensure_ascii=False)
             cols = list(d.keys())
             if upsert:
-                non_pk = [c for c in cols if c != "id"]
+                pk = "email" if table == "accounts" else "id"
+                non_pk = [c for c in cols if c != pk]
                 conn.execute(
                     f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))}) "
-                    f"ON CONFLICT(id) DO UPDATE SET {', '.join(f'{c}=excluded.{c}' for c in non_pk)}",
+                    f"ON CONFLICT({pk}) DO UPDATE SET {', '.join(f'{c}=excluded.{c}' for c in non_pk)}",
                     [d[c] for c in cols])
             else:
                 conn.execute(f"INSERT INTO {table} ({','.join(cols)}) VALUES ({','.join('?'*len(cols))})",
                              [d[c] for c in cols])
             conn.commit()
-            row = conn.execute(f"SELECT * FROM {table} WHERE id=?", [d["id"]]).fetchone()
+            pk_val = d.get("email") if table == "accounts" else d.get("id")
+            pk_col = "email" if table == "accounts" else "id"
+            row = conn.execute(f"SELECT * FROM {table} WHERE {pk_col}=?", [pk_val]).fetchone()
             if row:
                 r = dict(row)
                 if "data" in r and isinstance(r["data"], str):
@@ -2412,6 +2421,7 @@ def portal_project_data(project_id):
         researcher=session["researcher"])
 
 @app.route("/portal/projects/<project_id>/data/cell", methods=["POST"])
+@csrf.exempt
 @login_required
 def portal_project_data_cell(project_id):
     _, err = _require_project_owner(project_id)
