@@ -27,7 +27,9 @@ csrf = CSRFProtect(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal.db')
-PORTAL_FILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal_files')
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal_files'))
+os.makedirs(DATA_DIR, exist_ok=True)
+PORTAL_FILES_DIR = DATA_DIR  # alias kept for backward compat
 
 GALLERY_FOLDER    = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images', 'gallery')
 GALLERY_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gallery_data.json')
@@ -822,6 +824,7 @@ def gallery_event(key):
     return render_template("gallery_event.html", event=ev, photos=photos)
 
 @app.route("/gallery/<key>/upload", methods=["POST"])
+@login_required
 def gallery_event_upload(key):
     events = load_events()
     ev = next((e for e in events if e['key']==key), None)
@@ -839,6 +842,7 @@ def gallery_event_upload(key):
     return redirect(url_for('gallery_event', key=key))
 
 @app.route("/gallery/<key>/delete/<filename>", methods=["POST"])
+@login_required
 def gallery_event_delete(key, filename):
     safe = secure_filename(filename)
     path = os.path.join(GALLERY_FOLDER, key, safe)
@@ -852,6 +856,7 @@ def gallery_event_delete(key, filename):
     return redirect(url_for('gallery_event', key=key))
 
 @app.route("/gallery/<key>/delete-event", methods=["POST"])
+@login_required
 def gallery_delete_event(key):
     events = load_events()
     save_events([e for e in events if e['key']!=key])
@@ -987,6 +992,8 @@ def portal_project_add_participant(project_id):
 @app.route("/portal/projects/<project_id>/participants/<participant_id>/delete", methods=["POST"])
 @login_required
 def portal_project_delete_participant(project_id, participant_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     parts = sb("GET","project_participants",params=f"?id=eq.{participant_id}")
     code = parts[0]["code"] if parts else participant_id
     sb("DELETE","measurements",params=f"?participant_id=eq.{participant_id}")
@@ -997,6 +1004,8 @@ def portal_project_delete_participant(project_id, participant_id):
 @app.route("/portal/projects/<project_id>/participants/<participant_id>/edit", methods=["POST"])
 @login_required
 def portal_edit_participant(project_id, participant_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     age_raw = request.form.get("age","").strip()
     sb("PATCH","project_participants",
        data={"gender":request.form.get("gender","").strip() or None,
@@ -1089,6 +1098,8 @@ def portal_project_add_measurement(project_id):
 @app.route("/portal/projects/<project_id>/measurements/<measurement_id>/delete", methods=["POST"])
 @login_required
 def portal_project_delete_measurement(project_id, measurement_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     sb("DELETE","measurements",params=f"?id=eq.{measurement_id}")
     audit("delete_measurement", "measurements", measurement_id, f"project={project_id}")
     return redirect(url_for("portal_project", project_id=project_id))
@@ -1096,6 +1107,8 @@ def portal_project_delete_measurement(project_id, measurement_id):
 @app.route("/portal/projects/<project_id>/measurements/<measurement_id>/edit", methods=["POST"])
 @login_required
 def portal_edit_measurement(project_id, measurement_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     variables = sb("GET","project_variables",params=f"?project_id=eq.{project_id}") or []
     if variables and isinstance(variables,list):
         data_dict = {}
@@ -1210,24 +1223,29 @@ def portal_project_upload(project_id):
     if not f or not f.filename:
         flash('파일을 선택해주세요.')
         return redirect(url_for('portal_project', project_id=project_id))
-    fname = f.filename.lower()
+
+    original_name = f.filename
+    fname_lower = original_name.lower()
     rows = []
     tmppath = None
+
+    import tempfile, openpyxl
+
     try:
-        if fname.endswith('.csv'):
+        if fname_lower.endswith('.csv'):
             content = f.read().decode('utf-8-sig')
             reader = csv.DictReader(io.StringIO(content))
             rows = list(reader)
-        elif fname.endswith(('.xlsx', '.xls')):
-            import tempfile, openpyxl
+        elif fname_lower.endswith(('.xlsx', '.xls')):
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
                 tmppath = tmp.name
-                f.save(tmppath)
-            wb = openpyxl.load_workbook(tmppath, read_only=True)
+                f.seek(0); f.save(tmppath)
+            wb = openpyxl.load_workbook(tmppath, read_only=True, data_only=True)
             ws = wb.active
             headers = [str(c.value or '').strip() for c in next(ws.iter_rows(max_row=1))]
             for row in ws.iter_rows(min_row=2, values_only=True):
-                rows.append({headers[i]: str(v).strip() if v is not None else '' for i, v in enumerate(row)})
+                if any(v is not None for v in row):
+                    rows.append({headers[i]: (str(v).strip() if v is not None else '') for i, v in enumerate(row)})
             wb.close()
         else:
             flash('CSV 또는 Excel 파일만 업로드 가능해요.')
@@ -1241,111 +1259,127 @@ def portal_project_upload(project_id):
             except: pass
 
     if not rows:
-        flash('데이터가 없습니다.')
+        flash('데이터가 없어요.')
         return redirect(url_for('portal_project', project_id=project_id))
 
-    # 컬럼명 정규화 (변수명으로 쓸 수 있게: 영숫자+언더스코어)
+    # ── 원본 파일을 DATA_DIR에 저장 ──────────────────────────
+    proj_dir = os.path.join(DATA_DIR, f'project_{project_id}')
+    os.makedirs(proj_dir, exist_ok=True)
+    uid = str(_uuid.uuid4())
+    ext = os.path.splitext(original_name)[1]
+    stored_name = uid + ext
+    stored_path = os.path.join(proj_dir, stored_name)
+    f.seek(0)
+    f.save(stored_path)
+    file_size = os.path.getsize(stored_path)
+
+    # ── 컬럼 스키마 분석 ─────────────────────────────────────
+    all_headers = [h for h in rows[0].keys() if h]
+
+    def _is_numeric_col(header):
+        vals = [r.get(header,'') for r in rows[:20]]
+        nums = 0
+        for v in vals:
+            try:
+                if str(v).strip(): float(str(v)); nums += 1
+            except: pass
+        return nums >= max(1, len([v for v in vals if str(v).strip()]) * 0.7)
+
+    col_schema = [{"name": h, "type": "number" if _is_numeric_col(h) else "text"} for h in all_headers]
+
+    # ── portal_files 메타데이터 저장 ────────────────────────
+    file_rec = sb('POST', 'portal_files', data={
+        'project_id': project_id,
+        'filename': stored_name,
+        'original_name': original_name,
+        'size': file_size,
+        'researcher_email': session['researcher'],
+        'column_schema': json.dumps(col_schema, ensure_ascii=False),
+        'row_count': len(rows),
+    })
+    file_id = file_rec[0]['id'] if file_rec else None
+
+    # ── 컬럼 매핑 ────────────────────────────────────────────
     def slugify(s):
         s = re.sub(r'\s+', '_', s.strip())
         s = re.sub(r'[^\w가-힣]', '', s)
         return s[:40] or 'col'
 
-    all_headers = list(rows[0].keys())
-
-    # code 컬럼 찾기 (없으면 자동 생성)
-    code_col = None
-    for h in all_headers:
-        if h.lower() in ('code', '코드', '이름', 'name', '참여자'):
-            code_col = h
-            break
-
-    # 제외할 메타 컬럼 (이미 알려진 것들)
+    code_col = next((h for h in all_headers if h.lower() in ('code','코드','이름','name','참여자')), None)
+    known_map = {}
     skip_cols = {code_col} if code_col else set()
-    known_map = {}  # header → field
     for h in all_headers:
         hl = h.lower()
-        if hl in ('gender', '성별'): known_map[h] = 'gender'
-        elif hl in ('age', '나이', '연령'): known_map[h] = 'age'
-        elif hl in ('group', '그룹', '군'): known_map[h] = 'group'
-        elif hl in ('phase', '단계', '차수'): known_map[h] = 'phase'
-        elif hl in ('notes', '메모', '비고'): known_map[h] = 'notes'
-        elif hl in ('타임스탬프', 'timestamp'): skip_cols.add(h)
+        if hl in ('gender','성별'):       known_map[h] = 'gender'
+        elif hl in ('age','나이','연령'): known_map[h] = 'age'
+        elif hl in ('group','그룹','군'): known_map[h] = 'group'
+        elif hl in ('phase','단계','차수'): known_map[h] = 'phase'
+        elif hl in ('notes','메모','비고'): known_map[h] = 'notes'
+        elif hl in ('타임스탬프','timestamp'): skip_cols.add(h)
     skip_cols.update(known_map.keys())
+    data_cols = [h for h in all_headers if h not in skip_cols]
 
-    # 나머지 컬럼 → 변수로 등록
-    data_cols = [h for h in all_headers if h not in skip_cols and h]
-    existing_vars = sb('GET', 'project_variables', params=f'?projectid=eq.{project_id}') or []
-    existing_var_names = {v['name'] for v in existing_vars if isinstance(existing_vars, list)}
+    # ── 변수 자동 등록 ────────────────────────────────────────
+    existing_vars = sb('GET', 'project_variables', params=f'?project_id=eq.{project_id}') or []
+    existing_var_names = {v['name'] for v in (existing_vars if isinstance(existing_vars,list) else [])}
     for h in data_cols:
         vname = slugify(h)
-        if vname not in existing_var_names:
+        if vname and vname not in existing_var_names:
+            vtype = next((c['type'] for c in col_schema if c['name']==h), 'text')
             sb('POST', 'project_variables', data={
-                'projectid': project_id,
-                'name': vname,
-                'label': h[:80],
-                'vartype': 'text',
-                'unit': None
+                'project_id': project_id, 'name': vname,
+                'label': h[:80], 'var_type': vtype, 'unit': None,
             })
             existing_var_names.add(vname)
 
-    # 기존 참여자 목록
-    existing = sb('GET', 'project_participants', params=f'?projectid=eq.{project_id}') or []
-    pmap = {p['code']: p['id'] for p in existing if isinstance(existing, list)}
-
+    # ── 참여자 + 측정 데이터 저장 ────────────────────────────
+    existing_parts = sb('GET', 'project_participants', params=f'?project_id=eq.{project_id}') or []
+    pmap = {p['code']: p['id'] for p in (existing_parts if isinstance(existing_parts,list) else [])}
     added_p = added_m = 0
     row_errors = []
 
-    for i, row in enumerate(rows, start=2):
-        # 빈 행 스킵
-        if all(not str(v).strip() for v in row.values()):
-            continue
+    def _get_known(row, field):
+        h = next((k for k,v in known_map.items() if v==field), None)
+        return str(row.get(h,'')).strip() if h else ''
 
-        # 참여자 코드 결정
-        if code_col:
-            code = str(row.get(code_col, '')).strip()
-        else:
-            code = f'P{i-1:03d}'
-        if not code:
-            code = f'P{i-1:03d}'
+    for i, row in enumerate(rows, start=2):
+        if all(not str(v).strip() for v in row.values()): continue
+        code = str(row.get(code_col,'')).strip() if code_col else f'P{i-1:03d}'
+        if not code: code = f'P{i-1:03d}'
         code = code[:50]
 
-        # 참여자 등록
         if code not in pmap:
-            gender = str(row.get(next((h for h in all_headers if known_map.get(h) == 'gender'), ''), '')).strip() or None
-            age_raw = str(row.get(next((h for h in all_headers if known_map.get(h) == 'age'), ''), '')).strip()
+            age_raw = _get_known(row, 'age')
             age = int(age_raw) if age_raw.isdigit() and 1 <= int(age_raw) <= 120 else None
-            group = str(row.get(next((h for h in all_headers if known_map.get(h) == 'group'), ''), '')).strip() or None
             newp = sb('POST', 'project_participants', data={
-                'projectid': project_id, 'code': code,
-                'gender': gender, 'age': age, 'groupname': group
+                'project_id': project_id, 'code': code,
+                'gender': _get_known(row,'gender') or None,
+                'age': age,
+                'group_name': _get_known(row,'group') or None,
             })
             if newp and isinstance(newp, list):
-                pmap[code] = newp[0]['id']
-                added_p += 1
+                pmap[code] = newp[0]['id']; added_p += 1
             else:
-                row_errors.append(f'{i}행: 참여자 등록 실패')
-                continue
+                row_errors.append(f'{i}행: 참여자 등록 실패'); continue
 
         pid = pmap.get(code)
-        if not pid:
-            continue
+        if not pid: continue
 
-        # 측정 데이터 구성
-        phase = str(row.get(next((h for h in all_headers if known_map.get(h) == 'phase'), ''), '')).strip() or None
-        notes = str(row.get(next((h for h in all_headers if known_map.get(h) == 'notes'), ''), '')).strip() or None
         datadict = {}
         for h in data_cols:
             vname = slugify(h)
-            val = str(row.get(h, '')).strip()
+            val = str(row.get(h,'')).strip()
             if val:
-                datadict[vname] = val
+                try: datadict[vname] = float(val) if _is_numeric_col(h) else val
+                except: datadict[vname] = val
 
         sb('POST', 'measurements', data={
-            'projectid': project_id,
-            'participantid': pid,
-            'phase': phase,
-            'notes': notes,
-            'data': datadict
+            'project_id': project_id,
+            'participant_id': pid,
+            'phase': _get_known(row,'phase') or None,
+            'notes': _get_known(row,'notes') or None,
+            'data': datadict,
+            'source_file_id': file_id,
         })
         added_m += 1
 
@@ -1353,6 +1387,8 @@ def portal_project_upload(project_id):
     if row_errors:
         msg += f' 오류 {len(row_errors)}건: {", ".join(row_errors[:3])}'
     flash(msg)
+    if file_id:
+        return redirect(url_for('portal_project_data', project_id=project_id, file_id=file_id))
     return redirect(url_for('portal_project', project_id=project_id))
 
 @app.route("/portal/projects/<project_id>/stats")
@@ -1811,9 +1847,21 @@ def portal_files_download(file_id):
 def portal_files_delete(file_id):
     rows = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
     if rows and rows[0].get("researcher_email") == session["researcher"]:
-        path = os.path.join(PORTAL_FILES_DIR, rows[0]["filename"])
-        if os.path.exists(path): os.remove(path)
+        # Delete physical file
+        path = os.path.join(DATA_DIR, rows[0]["filename"])
+        if not os.path.exists(path):
+            # also check project subfolder
+            proj_id = rows[0].get("project_id","")
+            path2 = os.path.join(DATA_DIR, f"project_{proj_id}", rows[0]["filename"])
+            if os.path.exists(path2): path = path2
+        if os.path.exists(path):
+            try: os.remove(path)
+            except: pass
+        # Optionally cascade-delete measurements linked to this file
+        if request.form.get("delete_measurements") == "1":
+            sb("DELETE", "measurements", params=f"?source_file_id=eq.{file_id}")
         sb("DELETE", "portal_files", params=f"?id=eq.{file_id}")
+        flash("파일이 삭제됐어요.")
     return redirect(url_for("portal_files"))
 
 @app.route("/portal/settings")
@@ -2319,6 +2367,133 @@ def reset_password_confirm(token):
         flash("비밀번호가 재설정되었어요. 로그인해 주세요.")
         return redirect(url_for("login"))
     return render_template("reset_password_confirm.html", token=token)
+
+# ── Data viewer / editor (Feature C) ──────────────────
+@app.route("/portal/projects/<project_id>/data")
+@login_required
+def portal_project_data(project_id):
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    file_id = request.args.get("file_id")
+    participants = sb("GET", "project_participants", params=f"?project_id=eq.{project_id}") or []
+    p_map = {p["id"]: p for p in (participants if isinstance(participants, list) else [])}
+    if file_id:
+        mlist = sb("GET", "measurements", params=f"?project_id=eq.{project_id}&source_file_id=eq.{file_id}&order=measured_at.asc") or []
+        file_info = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
+        file_info = file_info[0] if file_info else {}
+        try: col_schema = json.loads(file_info.get("column_schema") or "[]")
+        except: col_schema = []
+    else:
+        mlist = sb("GET", "measurements", params=f"?project_id=eq.{project_id}&order=measured_at.asc") or []
+        file_info = {}
+        col_schema = []
+
+    measurements = mlist if isinstance(mlist, list) else []
+    for m in measurements:
+        info = p_map.get(m.get("participant_id",""), {})
+        m["participant_code"] = info.get("code","")
+        m["group_name"] = info.get("group_name","")
+        if not isinstance(m.get("data"), dict):
+            try: m["data"] = json.loads(m["data"] or "{}")
+            except: m["data"] = {}
+
+    # Derive columns from data if no schema stored
+    if not col_schema and measurements:
+        all_keys = []
+        for m in measurements:
+            for k in (m.get("data") or {}).keys():
+                if k not in all_keys: all_keys.append(k)
+        col_schema = [{"name": k, "type": "text"} for k in all_keys]
+
+    files = sb("GET", "portal_files", params=f"?project_id=eq.{project_id}&order=uploaded_at.desc") or []
+    return render_template("portal_data.html",
+        project=proj, measurements=measurements, col_schema=col_schema,
+        file_info=file_info, file_id=file_id, files=files,
+        researcher=session["researcher"])
+
+@app.route("/portal/projects/<project_id>/data/cell", methods=["POST"])
+@login_required
+def portal_project_data_cell(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return jsonify({"ok": False, "error": "unauthorized"}), 403
+    payload = request.get_json(silent=True) or {}
+    measurement_id = payload.get("measurement_id","")
+    col = payload.get("column","")
+    val = payload.get("value","")
+    if not measurement_id or not col:
+        return jsonify({"ok": False, "error": "missing fields"}), 400
+    rows = sb("GET", "measurements", params=f"?id=eq.{measurement_id}&project_id=eq.{project_id}&select=data")
+    if not rows:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    data = rows[0].get("data") or {}
+    if not isinstance(data, dict):
+        try: data = json.loads(data)
+        except: data = {}
+    # Handle special top-level columns
+    if col in ("phase", "notes"):
+        sb("PATCH", "measurements", data={col: val or None}, params=f"?id=eq.{measurement_id}")
+    else:
+        data[col] = val
+        sb("PATCH", "measurements", data={"data": data}, params=f"?id=eq.{measurement_id}")
+    return jsonify({"ok": True})
+
+@app.route("/portal/projects/<project_id>/data/export")
+@login_required
+def portal_project_data_export(project_id):
+    proj, err = _require_project_owner(project_id)
+    if err: return err
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    file_id = request.args.get("file_id")
+    participants = sb("GET", "project_participants", params=f"?project_id=eq.{project_id}") or []
+    p_map = {p["id"]: p for p in (participants if isinstance(participants, list) else [])}
+    if file_id:
+        mlist = sb("GET", "measurements", params=f"?project_id=eq.{project_id}&source_file_id=eq.{file_id}&order=measured_at.asc") or []
+        file_info = sb("GET", "portal_files", params=f"?id=eq.{file_id}")
+        file_info = file_info[0] if file_info else {}
+        try: col_schema = json.loads(file_info.get("column_schema") or "[]")
+        except: col_schema = []
+        data_cols = [c["name"] for c in col_schema]
+    else:
+        mlist = sb("GET", "measurements", params=f"?project_id=eq.{project_id}&order=measured_at.asc") or []
+        data_cols = []
+
+    measurements = mlist if isinstance(mlist, list) else []
+    for m in measurements:
+        info = p_map.get(m.get("participant_id",""), {})
+        m["participant_code"] = info.get("code","")
+        m["group_name"] = info.get("group_name","")
+        if not isinstance(m.get("data"), dict):
+            try: m["data"] = json.loads(m["data"] or "{}")
+            except: m["data"] = {}
+        if not data_cols:
+            for k in (m.get("data") or {}).keys():
+                if k not in data_cols: data_cols.append(k)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Data"
+    header_fill = PatternFill("solid", fgColor="0F6B6B")
+    header_font = Font(color="FFFFFF", bold=True)
+    meta_cols = ["code", "group", "phase", "measured_at", "notes"]
+    all_cols = meta_cols + data_cols
+    for ci, col in enumerate(all_cols, 1):
+        cell = ws.cell(row=1, column=ci, value=col)
+        cell.fill = header_fill; cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[cell.column_letter].width = max(12, len(col)+4)
+    for m in measurements:
+        data = m.get("data") or {}
+        row = [
+            m.get("participant_code",""), m.get("group_name",""),
+            m.get("phase",""), (m.get("measured_at") or "")[:10], m.get("notes","")
+        ] + [data.get(c,"") for c in data_cols]
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    fname = f'{proj["name"].replace(" ","_")}_{datetime.now().strftime("%Y%m%d")}.xlsx'
+    return Response(buf.read(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 if __name__ == "__main__":
     app.run(debug=False)

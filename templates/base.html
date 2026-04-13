@@ -43,6 +43,16 @@
   </div>
 </header>
 
+{% with messages = get_flashed_messages() %}
+{% if messages %}
+<div style="max-width:960px;margin:.75rem auto;padding:0 1rem">
+  {% for msg in messages %}
+  <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:8px;padding:10px 16px;margin-bottom:8px;color:#065f46;font-size:.9rem;">{{ msg }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
 {% block content %}{% endblock %}
 
 <!-- ── FOOTER ── -->

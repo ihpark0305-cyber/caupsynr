@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · 데이터 뷰어{% endblock %}
+
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.portal-header{background:var(--dark);padding:20px 0;border-bottom:1px solid rgba(255,255,255,.08);}
+.data-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);}
+table.dt{border-collapse:collapse;width:100%;font-size:.82rem;min-width:600px;}
+table.dt th{padding:9px 12px;background:var(--bg);color:var(--muted);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;cursor:pointer;user-select:none;border-bottom:2px solid var(--border);}
+table.dt th:hover{color:var(--accent);}
+table.dt td{padding:7px 12px;border-top:1px solid var(--border-light);vertical-align:middle;max-width:200px;}
+table.dt tr:hover td{background:var(--accent-light);}
+table.dt td.editable{cursor:pointer;}
+table.dt td.editable:hover{outline:2px solid var(--accent);border-radius:4px;}
+table.dt td input.cell-input{width:100%;border:2px solid var(--accent);border-radius:4px;padding:3px 6px;font-size:.82rem;background:var(--surface);color:var(--text);outline:none;}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.search-box{padding:7px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.83rem;background:var(--bg);width:200px;}
+.sort-asc::after{content:" ↑";}
+.sort-desc::after{content:" ↓";}
+.row-del{background:none;border:none;color:var(--border);cursor:pointer;font-size:.85rem;padding:2px 6px;}
+.row-del:hover{color:#e74c3c;}
+.saving{opacity:.5;}
+#save-status{font-size:.78rem;color:var(--muted);min-width:80px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="portal-wrap">
+  <div class="portal-header">
+    <div class="container" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div>
+        <a href="{{ url_for('portal_project', project_id=project.id) }}" style="color:rgba(255,255,255,.4);font-size:.78rem;text-decoration:none;">← {{ project.name }}</a>
+        <h1 style="color:#fff;font-size:1.3rem;margin:4px 0 2px;">
+          📊 데이터 뷰어
+          {% if file_info %}· <span style="color:rgba(255,255,255,.6);font-size:1rem;">{{ file_info.original_name }}</span>{% endif %}
+        </h1>
+        <span style="color:rgba(255,255,255,.4);font-size:.78rem;">{{ measurements|length }}행 · {{ col_schema|length }}변수</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="{{ url_for('portal_project_data_export', project_id=project.id, file_id=file_id or '') }}"
+           class="btn btn-outline" style="font-size:.8rem;padding:7px 14px;color:rgba(255,255,255,.7);border-color:rgba(255,255,255,.2);">
+          ↓ Excel 다운로드
+        </a>
+        {% if files|length > 1 %}
+        <select onchange="if(this.value)location.href=this.value"
+                style="padding:7px 12px;border:1px solid rgba(255,255,255,.2);border-radius:8px;background:rgba(255,255,255,.1);color:#fff;font-size:.8rem;">
+          <option value="">파일 전환…</option>
+          {% for fi in files %}
+          <option value="{{ url_for('portal_project_data', project_id=project.id, file_id=fi.id) }}"
+                  {% if fi.id == file_id %}selected{% endif %}>{{ fi.original_name }}</option>
+          {% endfor %}
+        </select>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="container" style="padding-top:24px;padding-bottom:60px;">
+
+    <div class="toolbar">
+      <input class="search-box" type="text" placeholder="검색…" oninput="filterRows(this.value)" id="search-input">
+      <span id="row-count" style="font-size:.8rem;color:var(--muted);"></span>
+      <span id="save-status"></span>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn btn-outline" style="font-size:.82rem;" onclick="addRow()">+ 행 추가</button>
+        <button class="btn btn-outline" style="font-size:.82rem;color:#e74c3c;border-color:#e74c3c;" onclick="deleteSelected()">선택 삭제</button>
+      </div>
+    </div>
+
+    {% if measurements %}
+    <div class="data-table-wrap">
+      <table class="dt" id="data-table">
+        <thead>
+          <tr>
+            <th style="width:32px;"><input type="checkbox" id="select-all" onchange="toggleAll(this)"></th>
+            <th onclick="sortBy('code')" id="th-code">코드</th>
+            <th onclick="sortBy('group')" id="th-group">그룹</th>
+            <th onclick="sortBy('phase')" id="th-phase">회차</th>
+            <th onclick="sortBy('measured_at')" id="th-measured_at">측정일</th>
+            {% for col in col_schema %}
+            <th onclick="sortBy('{{ col.name }}')" id="th-{{ col.name }}">{{ col.name }}</th>
+            {% endfor %}
+            <th style="width:36px;"></th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          {% for m in measurements %}
+          <tr data-id="{{ m.id }}" data-code="{{ m.participant_code }}" data-group="{{ m.group_name }}" data-phase="{{ m.phase or '' }}">
+            <td><input type="checkbox" class="row-cb" value="{{ m.id }}"></td>
+            <td style="font-weight:600;color:var(--accent);">{{ m.participant_code }}</td>
+            <td style="color:var(--muted);font-size:.78rem;">{{ m.group_name or '—' }}</td>
+            <td class="editable" data-col="phase" data-id="{{ m.id }}">{{ m.phase or '' }}</td>
+            <td style="color:var(--muted);">{{ (m.measured_at or '')[:10] }}</td>
+            {% for col in col_schema %}
+            <td class="editable" data-col="{{ col.name }}" data-id="{{ m.id }}">{{ m.data.get(col.name, '') if m.data else '' }}</td>
+            {% endfor %}
+            <td><button class="row-del" onclick="deleteRow('{{ m.id }}', this)" title="행 삭제">✕</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% else %}
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:60px;text-align:center;color:var(--muted);">
+      <p style="font-size:2rem;margin-bottom:12px;">📭</p>
+      <p>이 파일에 연결된 측정 데이터가 없어요.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PROJECT_ID = {{ project.id | tojson }};
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+let sortCol = null, sortDir = 1;
+
+// ── 인라인 편집 ───────────────────────────────────────────────
+document.querySelectorAll('td.editable').forEach(td => {
+  td.addEventListener('click', function() {
+    if (this.querySelector('input')) return;
+    const orig = this.textContent.trim();
+    const inp = document.createElement('input');
+    inp.className = 'cell-input';
+    inp.value = orig;
+    this.innerHTML = '';
+    this.appendChild(inp);
+    inp.focus();
+
+    const save = async () => {
+      const newVal = inp.value.trim();
+      setSaveStatus('저장 중…');
+      td.classList.add('saving');
+      try {
+        const r = await fetch(`/portal/projects/${PROJECT_ID}/data/cell`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json','X-CSRFToken': CSRF_TOKEN},
+          body: JSON.stringify({
+            measurement_id: td.dataset.id,
+            column: td.dataset.col,
+            value: newVal
+          })
+        });
+        const j = await r.json();
+        td.textContent = j.ok ? newVal : orig;
+        setSaveStatus(j.ok ? '저장됨 ✓' : '오류');
+      } catch {
+        td.textContent = orig;
+        setSaveStatus('오류');
+      }
+      td.classList.remove('saving');
+      setTimeout(() => setSaveStatus(''), 2000);
+    };
+
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+      if (e.key === 'Escape') { td.textContent = orig; }
+    });
+    inp.addEventListener('blur', save);
+  });
+});
+
+function setSaveStatus(msg) {
+  document.getElementById('save-status').textContent = msg;
+}
+
+// ── 행 삭제 ──────────────────────────────────────────────────
+async function deleteRow(mid, btn) {
+  if (!confirm('이 행을 삭제할까요?')) return;
+  const r = await fetch(`/portal/projects/${PROJECT_ID}/measurements/${mid}/delete`, {
+    method: 'POST',
+    headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/x-www-form-urlencoded'},
+    body: `csrf_token=${CSRF_TOKEN}`
+  });
+  if (r.redirected || r.ok) {
+    btn.closest('tr').remove();
+    updateRowCount();
+  }
+}
+
+// ── 선택 삭제 ────────────────────────────────────────────────
+async function deleteSelected() {
+  const checked = [...document.querySelectorAll('.row-cb:checked')];
+  if (!checked.length) return;
+  if (!confirm(`선택된 ${checked.length}행을 삭제할까요?`)) return;
+  for (const cb of checked) {
+    const tr = cb.closest('tr');
+    const mid = cb.value;
+    await fetch(`/portal/projects/${PROJECT_ID}/measurements/${mid}/delete`, {
+      method: 'POST',
+      headers: {'X-CSRFToken': CSRF_TOKEN, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: `csrf_token=${CSRF_TOKEN}`
+    });
+    tr.remove();
+  }
+  updateRowCount();
+}
+
+// ── 행 추가 ──────────────────────────────────────────────────
+function addRow() {
+  window.location.href = `{{ url_for('portal_project', project_id=project.id) }}#tab-measurements`;
+}
+
+// ── 전체 선택 ────────────────────────────────────────────────
+function toggleAll(cb) {
+  document.querySelectorAll('.row-cb').forEach(c => c.checked = cb.checked);
+}
+
+// ── 검색 필터 ────────────────────────────────────────────────
+function filterRows(q) {
+  q = q.toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('#tbody tr').forEach(tr => {
+    const text = tr.textContent.toLowerCase();
+    const show = !q || text.includes(q);
+    tr.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  updateRowCount(visible);
+}
+
+// ── 정렬 ─────────────────────────────────────────────────────
+function sortBy(col) {
+  const tbody = document.getElementById('tbody');
+  const rows = [...tbody.querySelectorAll('tr')];
+  if (sortCol === col) sortDir *= -1;
+  else { sortCol = col; sortDir = 1; }
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  const th = document.getElementById('th-' + col);
+  if (th) th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+  const colIdx = getColIndex(col);
+  rows.sort((a,b) => {
+    const av = a.cells[colIdx]?.textContent.trim() || '';
+    const bv = b.cells[colIdx]?.textContent.trim() || '';
+    const an = parseFloat(av), bn = parseFloat(bv);
+    if (!isNaN(an) && !isNaN(bn)) return (an-bn)*sortDir;
+    return av.localeCompare(bv, 'ko') * sortDir;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+function getColIndex(col) {
+  const headers = [...document.querySelectorAll('thead th')];
+  return headers.findIndex(th => th.id === 'th-' + col);
+}
+
+function updateRowCount(n) {
+  const total = document.querySelectorAll('#tbody tr').length;
+  const shown = n !== undefined ? n : [...document.querySelectorAll('#tbody tr')].filter(r => r.style.display !== 'none').length;
+  document.getElementById('row-count').textContent = shown === total ? `${total}행` : `${shown} / ${total}행`;
+}
+
+document.addEventListener('DOMContentLoaded', updateRowCount);
+</script>
+{% endblock %}

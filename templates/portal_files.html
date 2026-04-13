@@ -116,9 +116,18 @@
         {% if f.project_name %}
         <div class="file-project-tag">{{ f.project_name }}</div>
         {% endif %}
-        <div class="file-actions">
+        {% if f.row_count %}
+        <div style="font-size:.68rem;color:var(--muted);">{{ f.row_count }}행</div>
+        {% endif %}
+        <div class="file-actions" style="flex-wrap:wrap;justify-content:center;">
+          {% if f.project_id %}
+          <a href="{{ url_for('portal_project_data', project_id=f.project_id, file_id=f.id) }}"
+             class="btn btn-primary" style="font-size:.72rem;padding:4px 10px;">📊 데이터 보기</a>
+          {% endif %}
           <a href="{{ url_for('portal_files_download', file_id=f.id) }}" class="btn btn-outline" style="font-size:.72rem;padding:4px 10px;">↓ 다운로드</a>
-          <form action="{{ url_for('portal_files_delete', file_id=f.id) }}" method="POST" onsubmit="return confirm('삭제?')">
+          <form action="{{ url_for('portal_files_delete', file_id=f.id) }}" method="POST"
+                onsubmit="return confirmDelete(this, {{ 'true' if f.row_count else 'false' }})">
+            <input type="hidden" name="delete_measurements" id="del-meas-{{ f.id }}" value="0">
             <button type="submit" style="font-size:.72rem;padding:4px 10px;background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:8px;cursor:pointer;">삭제</button>
           </form>
         </div>
@@ -167,6 +176,15 @@ function resetUpload() {
   fileInput.value = '';
   document.getElementById('selected-file-name').style.display = 'none';
   document.getElementById('upload-form-row').style.display = 'none';
+}
+
+function confirmDelete(form, hasMeasurements) {
+  if (hasMeasurements) {
+    const withData = confirm('이 파일로 업로드된 측정 데이터도 함께 삭제할까요?\n\n확인 = 데이터도 삭제\n취소 = 파일만 삭제');
+    const fileId = form.querySelector('[id^="del-meas-"]').id.replace('del-meas-','');
+    document.getElementById('del-meas-' + fileId).value = withData ? '1' : '0';
+  }
+  return confirm('파일을 삭제할까요?');
 }
 
 function filterProject(id, btn) {
