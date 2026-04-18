@@ -27,7 +27,8 @@
       "Bash(python -c \"import flask_wtf, flask_limiter, flask_mail; print\\(''all ok''\\)\")",
       "Bash(python -m py_compile app.py)",
       "Bash(python -c \"import app\")",
-      "Bash(python -c \"import app; print\\('OK'\\)\")"
+      "Bash(python -c \"import app; print\\('OK'\\)\")",
+      "Bash(python -m http.server 4321)"
     ]
   },
   "hooks": {
