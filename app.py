@@ -247,6 +247,16 @@ def init_db():
                 alpha_progress_rate REAL,
                 received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
             );
+            CREATE TABLE IF NOT EXISTS mindmate_followup (
+                id TEXT PRIMARY KEY,
+                project_id TEXT,
+                user_name TEXT,
+                followup_round TEXT,
+                submitted_at TEXT,
+                source TEXT,
+                data TEXT DEFAULT '{}',
+                received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
         ''')
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -314,6 +324,7 @@ _ALLOWED_TABLES = {
     'sessions','audit_log','project_collaborators','reset_tokens','project_protocols',
     'wardy_events','tasks',
     'neurobreeze_eeg','neurobreeze_meditation',
+    'mindmate_followup',
 }
 
 def _safe_col(col):
@@ -2399,6 +2410,44 @@ def api_neurobreeze_meditation():
         saved += 1
     return jsonify({"ok": True, "saved": saved}), 201
 
+# ── Mind Mate 후속조사(f/u) 수신 API ─────────────────────
+# 마인드메이트 앱의 후속조사 로그를 서버로 받는 엔드포인트.
+# 지금은 구글 앱스 스크립트가 각 응답을 이 엔드포인트로 릴레이하는 방식.
+# 설문 문항 스키마를 미리 알 수 없으므로, 넘어온 payload 전체를 data(JSON)에
+# 그대로 보관하고 흔한 식별 필드(이름/제출시간/회차)만 별도 컬럼으로 뽑아둔다.
+def _pick(d, *keys):
+    for k in keys:
+        v = d.get(k)
+        if v is not None and str(v).strip() != "":
+            return v
+    return None
+
+@app.route("/api/mindmate/followup", methods=["POST"])
+@csrf.exempt
+def api_mindmate_followup():
+    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
+        return jsonify({"error":"Unauthorized"}), 401
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error":"No JSON body"}), 400
+    records = body if isinstance(body, list) else [body]
+    saved = 0
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        # {data:{...}} 래핑 형태와 평평한 형태 모두 허용
+        payload = r.get("data") if isinstance(r.get("data"), dict) else r
+        sb("POST", "mindmate_followup", data={
+            "project_id":     _pick(r, "project_id"),
+            "user_name":      str(_pick(r, "user_name","name","이름","성함","참여자","participant","participant_id") or "").strip(),
+            "followup_round": _pick(r, "followup_round","round","회차","wave","fu_round"),
+            "submitted_at":   _pick(r, "submitted_at","timestamp","Timestamp","제출시간","제출일시","타임스탬프","time","date"),
+            "source":         _pick(r, "source") or "apps_script",
+            "data":           payload,
+        })
+        saved += 1
+    return jsonify({"ok": True, "saved": saved}), 201
+
 # ── Wardy 이벤트 뷰어 ─────────────────────────────────
 @app.route("/portal/wardy")
 @login_required
@@ -2609,6 +2658,86 @@ def portal_neurobreeze_export():
     buf.seek(0)
     return Response(buf.read(), mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
+
+# ── Mind Mate 후속조사 뷰어 ────────────────────────────
+def _mm_field_keys(rows):
+    """모든 응답의 data(JSON)에 등장한 문항 키를, 처음 등장한 순서대로 수집."""
+    keys, seen = [], set()
+    for r in rows:
+        d = r.get("data")
+        if isinstance(d, dict):
+            for k in d.keys():
+                if k not in seen:
+                    seen.add(k); keys.append(k)
+    return keys
+
+@app.route("/portal/mindmate")
+@login_required
+def portal_mindmate():
+    project_id = request.args.get("project_id","")
+    user_name  = request.args.get("user_name","").strip()
+
+    params = "?select=*&order=received_at.asc&limit=5000"
+    if project_id: params += f"&project_id=eq.{project_id}"
+    if user_name:  params += f"&user_name=ilike.{user_name}%25"
+    rows = sb("GET","mindmate_followup",params=params) or []
+
+    # user_name 기준 그룹핑(최근 응답자 먼저)
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for r in rows:
+        groups.setdefault(r.get("user_name") or "Unknown", []).append(r)
+    grouped = []
+    for uname, recs in groups.items():
+        times = [x.get("submitted_at") or x.get("received_at") or "" for x in recs]
+        times = [t for t in times if t]
+        grouped.append({
+            "user_name": uname, "records": recs, "count": len(recs),
+            "last_time": max(times)[:16].replace("T"," ") if times else "",
+        })
+    grouped.sort(key=lambda g: g["last_time"], reverse=True)
+
+    projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
+    return render_template("portal_mindmate.html",
+        researcher=session["researcher"],
+        grouped=grouped, total=len(rows),
+        projects=projects, project_id=project_id, user_name=user_name,
+        api_key=os.getenv("APP_API_KEY","tsl-app-key-2025"))
+
+@app.route("/portal/mindmate/delete", methods=["POST"])
+@login_required
+def portal_mindmate_delete():
+    ids = request.form.getlist("ids")
+    if not ids:
+        flash("삭제할 항목을 선택해주세요.", "error")
+        return redirect(url_for("portal_mindmate"))
+    for eid in ids:
+        sb("DELETE","mindmate_followup",params=f"?id=eq.{eid}")
+    flash(f"{len(ids)}건 삭제됐습니다.")
+    return redirect(url_for("portal_mindmate"))
+
+@app.route("/portal/mindmate/export")
+@login_required
+def portal_mindmate_export():
+    project_id = request.args.get("project_id","")
+    user_name  = request.args.get("user_name","").strip()
+    params = "?select=*&order=received_at.asc"
+    if project_id: params += f"&project_id=eq.{project_id}"
+    if user_name:  params += f"&user_name=ilike.{user_name}%25"
+    rows = sb("GET","mindmate_followup",params=params) or []
+
+    field_keys = _mm_field_keys(rows)
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM: 한글 설문 응답을 엑셀에서 바로 열 수 있게
+    w = csv.writer(buf)
+    meta = ["id","user_name","followup_round","submitted_at","received_at"]
+    w.writerow(meta + field_keys)
+    for r in rows:
+        d = r.get("data") if isinstance(r.get("data"), dict) else {}
+        w.writerow([r.get(c,"") for c in meta] + [d.get(k,"") for k in field_keys])
+    buf.seek(0)
+    return Response(buf.read(), mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition":"attachment;filename=mindmate_followup.csv"})
 
 # ── Project meta edit ────────────────────────────────
 @app.route("/portal/projects/<project_id>/edit", methods=["POST"])
