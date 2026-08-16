@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Mind Mate 실시간 · 연구자 포털{% endblock %}
+{% block head %}
+<style>
+.portal-wrap{min-height:calc(100vh - var(--nav-h));background:var(--bg);}
+.live-badge{display:inline-flex;align-items:center;gap:6px;background:#fee2e2;color:#dc2626;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:100px;}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#dc2626;animation:live-pulse 1.4s infinite;}
+@keyframes live-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+.fu-entry{border-top:1px solid var(--border);padding:14px 18px;cursor:pointer;user-select:none;}
+.fu-entry:first-child{border-top:none;}
+.fu-entry:hover{background:var(--accent-light);}
+.fu-entry-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.fu-badge{background:var(--accent-light);color:var(--accent);font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:100px;}
+.fu-time{font-size:.78rem;color:var(--muted);}
+.fu-arrow{font-size:.7rem;color:var(--fg-4);margin-left:auto;transition:transform .2s;}
+.fu-arrow.open{transform:rotate(90deg);}
+.fu-detail{padding-top:12px;cursor:default;}
+.kv-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+.kv-table th{width:34%;max-width:280px;text-align:left;vertical-align:top;padding:6px 12px;font-weight:600;color:var(--fg-2);background:var(--bg);border:1px solid var(--border);word-break:break-word;}
+.kv-table td{padding:6px 12px;border:1px solid var(--border);color:var(--fg-1);vertical-align:top;word-break:break-word;white-space:pre-wrap;}
+.picker-card{display:block;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;text-decoration:none;color:var(--fg-1);transition:border-color .15s;}
+.picker-card:hover{border-color:var(--accent);}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="lin-wrap">
+  {% include "_portal_sidebar.html" %}
+  <div class="lin-main">
+  <div class="container" style="padding-top:28px;padding-bottom:40px;">
+
+    {% if project is none %}
+    <!-- 프로젝트 선택 -->
+    <h1 style="margin:0 0 6px;font-size:1.4rem;">🔴 Mind Mate 실시간</h1>
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:20px;">실시간으로 볼 프로젝트를 먼저 선택하세요.</div>
+    {% if projects %}
+    <div style="display:flex;flex-direction:column;gap:8px;max-width:520px;">
+      {% for p in projects %}
+      <a class="picker-card" href="{{ url_for('portal_mindmate_live', project_id=p.id) }}">{{ p.name }}</a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:60px 20px;color:var(--muted);">
+      <div style="font-size:2.5rem;margin-bottom:12px;">📭</div>
+      <div>프로젝트가 아직 없습니다.</div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <!-- 실시간 뷰 -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
+      <h1 style="margin:0;font-size:1.4rem;">🔴 Mind Mate 실시간 · {{ project.name }}</h1>
+      <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+    </div>
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:18px;" id="statusLine">불러오는 중…</div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;" id="listBox">
+      <div style="text-align:center;padding:60px 20px;color:var(--muted);">불러오는 중…</div>
+    </div>
+
+    <script>
+    const PROJECT_ID = {{ project.id | tojson }};
+    let latestRecords = [];
+    const expandedIds = new Set();
+    const detailCache = {};
+
+    function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function fmtTime(t){ return t ? String(t).slice(0,19).replace('T',' ') : ''; }
+
+    function renderDetail(id){
+      const d = detailCache[id];
+      if (!d) return '<div class="fu-detail" style="color:var(--muted);font-size:.82rem;">불러오는 중…</div>';
+      const entries = (d.data && typeof d.data === 'object') ? Object.entries(d.data) : [];
+      if (!entries.length) return '<div class="fu-detail" style="color:var(--muted);font-size:.82rem;">표시할 응답 필드가 없습니다.</div>';
+      const rows = entries.map(([k,v]) => {
+        const val = (v !== null && typeof v === 'object') ? JSON.stringify(v) : v;
+        return `<tr><th>${esc(k)}</th><td>${esc(val)}</td></tr>`;
+      }).join('');
+      return `<div class="fu-detail"><table class="kv-table">${rows}</table></div>`;
+    }
+
+    function renderList(){
+      const box = document.getElementById('listBox');
+      if (!latestRecords.length){
+        box.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--muted);"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div><div>아직 응답이 없습니다.</div></div>';
+        return;
+      }
+      box.innerHTML = latestRecords.map(r => {
+        const open = expandedIds.has(r.id);
+        return `
+        <div class="fu-entry" onclick="toggleDetail('${r.id}')">
+          <div class="fu-entry-head">
+            <span style="font-weight:700;font-size:.9rem;">${esc(r.label)}</span>
+            ${r.followup_round ? `<span class="fu-badge">회차 ${esc(r.followup_round)}</span>` : ''}
+            <span class="fu-time">제출: ${fmtTime(r.submitted_at || r.received_at)}</span>
+            <span class="fu-arrow ${open ? 'open' : ''}">▶</span>
+          </div>
+          ${open ? renderDetail(r.id) : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function toggleDetail(id){
+      if (expandedIds.has(id)) {
+        expandedIds.delete(id);
+        renderList();
+        return;
+      }
+      expandedIds.add(id);
+      renderList();
+      if (!detailCache[id]) {
+        fetch(`/portal/mindmate/live/${id}?project_id=${encodeURIComponent(PROJECT_ID)}`)
+          .then(res => res.json())
+          .then(json => { if (json.ok) { detailCache[id] = json; renderList(); } })
+          .catch(() => {});
+      }
+    }
+
+    async function pollData(){
+      try {
+        const res = await fetch(`/portal/mindmate/live/data?project_id=${encodeURIComponent(PROJECT_ID)}`);
+        const json = await res.json();
+        if (json.ok) {
+          latestRecords = json.records;
+          renderList();
+          document.getElementById('statusLine').textContent =
+            `응답 ${latestRecords.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`;
+        }
+      } catch (e) {
+        document.getElementById('statusLine').textContent = '갱신 실패 — 잠시 후 다시 시도합니다.';
+      }
+    }
+    pollData();
+    setInterval(pollData, 10000);
+    </script>
+    {% endif %}
+
+  </div>
+  </div>
+</div>
+<script>
+function toggleNav(key){const btn=document.getElementById('nav-'+key),group=document.getElementById('sub-'+key);if(!btn||!group)return;const open=group.classList.contains('open');group.classList.toggle('open',!open);btn.classList.toggle('expanded',!open);}
+</script>
+{% endblock %}

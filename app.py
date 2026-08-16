@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
-import os, sqlite3, uuid as _uuid, json, csv, io, re
+import os, sqlite3, uuid as _uuid, json, csv, io, re, hashlib
 import requests as _requests
 import drive_sync
 from scipy import stats as _scipy_stats
@@ -536,6 +536,17 @@ def _require_project_owner(project_id):
             flash("이 프로젝트에 접근 권한이 없어요.", "error")
             return None, redirect(url_for("portal"))
     return proj[0], None
+
+def _project_access_ok(project_id, email):
+    """Same check as _require_project_owner but returns a bool (no flash/redirect) — for JSON endpoints."""
+    proj = sb("GET","projects",params=f"?id=eq.{project_id}")
+    if not proj or not isinstance(proj,list):
+        return False
+    if proj[0].get("researcher_email","") == email:
+        return True
+    row = sb("GET", "project_collaborators",
+             params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}&select=role")
+    return bool(row)
 
 # ─── Site-wide ───────────────────────────────────────────────
 PROFESSOR = {
@@ -2738,6 +2749,67 @@ def portal_mindmate_export():
     buf.seek(0)
     return Response(buf.read(), mimetype="text/csv; charset=utf-8",
         headers={"Content-Disposition":"attachment;filename=mindmate_followup.csv"})
+
+# ── Mind Mate 실시간 뷰어 ─────────────────────────────
+# user_name은 실명일 수 있으므로 화면에는 절대 노출하지 않고,
+# project_id+user_name의 해시로 만든 고정 가명 라벨만 보여준다.
+# (project_participants.code와는 별개 체계: mindmate_followup.user_name은
+#  자유 텍스트라 참여자 등록 코드와 자동으로 연결할 방법이 없다.)
+def _mindmate_label(project_id, user_name):
+    h = hashlib.sha256(f"{project_id}|{user_name or ''}".encode()).hexdigest()[:4].upper()
+    return f"참여자-{h}"
+
+@app.route("/portal/mindmate/live")
+@login_required
+def portal_mindmate_live():
+    project_id = request.args.get("project_id","")
+    if not project_id:
+        projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name&order=created_at.desc") or []
+        return render_template("portal_mindmate_live.html",
+            researcher=session["researcher"], project=None, projects=projects)
+    project, err = _require_project_owner(project_id)
+    if err: return err
+    return render_template("portal_mindmate_live.html",
+        researcher=session["researcher"], project=project, projects=None)
+
+@app.route("/portal/mindmate/live/data")
+@csrf.exempt
+@login_required
+def portal_mindmate_live_data():
+    project_id = request.args.get("project_id","")
+    if not project_id or not _project_access_ok(project_id, session["researcher"]):
+        return jsonify({"error":"Unauthorized"}), 403
+    rows = sb("GET","mindmate_followup",
+        params=f"?project_id=eq.{project_id}&select=id,user_name,followup_round,submitted_at,received_at&order=received_at.desc&limit=200") or []
+    records = [{
+        "id":             r.get("id"),
+        "label":          _mindmate_label(project_id, r.get("user_name")),
+        "followup_round": r.get("followup_round"),
+        "submitted_at":   r.get("submitted_at"),
+        "received_at":    r.get("received_at"),
+    } for r in rows]
+    return jsonify({"ok": True, "records": records})
+
+@app.route("/portal/mindmate/live/<record_id>")
+@csrf.exempt
+@login_required
+def portal_mindmate_live_detail(record_id):
+    project_id = request.args.get("project_id","")
+    if not project_id or not _project_access_ok(project_id, session["researcher"]):
+        return jsonify({"error":"Unauthorized"}), 403
+    rows = sb("GET","mindmate_followup",params=f"?id=eq.{record_id}&project_id=eq.{project_id}&select=*") or []
+    if not rows:
+        return jsonify({"error":"Not found"}), 404
+    r = rows[0]
+    label = _mindmate_label(project_id, r.get("user_name"))
+    d = r.get("data") if isinstance(r.get("data"), dict) else {}
+    audit("view_mindmate_response", "mindmate_followup", record_id, detail=f"{label} (project_id={project_id})")
+    return jsonify({
+        "ok": True, "id": record_id, "label": label,
+        "followup_round": r.get("followup_round"),
+        "submitted_at":   r.get("submitted_at"),
+        "data": d,
+    })
 
 # ── Project meta edit ────────────────────────────────
 @app.route("/portal/projects/<project_id>/edit", methods=["POST"])
