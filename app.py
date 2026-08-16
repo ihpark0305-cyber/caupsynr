@@ -2342,6 +2342,14 @@ def portal_all_sessions():
     return render_template("portal_sessions.html", researcher=session["researcher"],
         sessions=session_list)
 
+def _batch_response(total, saved, invalid, failed):
+    """Shared response shape for the /api/* batch-ingest endpoints below.
+    ok is true only if nothing failed to *save* (invalid input doesn't count
+    against it, since retrying invalid input wouldn't help)."""
+    code = 201 if failed == 0 else (500 if failed == total else 207)
+    return jsonify({"ok": failed == 0, "total": total, "saved": saved,
+                     "invalid": invalid, "failed": failed}), code
+
 @app.route("/api/sessions", methods=["POST"])
 @csrf.exempt
 def api_receive_session():
@@ -2349,7 +2357,7 @@ def api_receive_session():
         return jsonify({"error":"Unauthorized"}),401
     payload = request.get_json(silent=True) or {}
     sid = str(_uuid.uuid4())
-    sb("POST", "sessions", data={
+    result = sb("POST", "sessions", data={
         "id":             sid,
         "project_id":     payload.get("project_id"),
         "participant_id": payload.get("participant_id"),
@@ -2357,6 +2365,8 @@ def api_receive_session():
         "notes":          payload.get("notes", ""),
         "data":           payload.get("data", {}),
     })
+    if not result:
+        return jsonify({"ok": False, "error": "save failed"}), 500
     return jsonify({"ok": True, "id": sid}), 201
 
 # ── Wardy 앱 이벤트 수신 API ──────────────────────────
@@ -2372,11 +2382,12 @@ def api_wardy_events():
 
     # 단건 또는 배치(리스트) 모두 허용
     events = body if isinstance(body, list) else [body]
-    saved = 0
+    saved = invalid = failed = 0
     for ev in events:
         if not ev.get("state") or not ev.get("user_name"):
+            invalid += 1
             continue
-        sb("POST", "wardy_events", data={
+        result = sb("POST", "wardy_events", data={
             "project_id":  ev.get("project_id") or None,
             "user_name":   str(ev.get("user_name", "")).strip(),
             "seq":         ev.get("seq") or ev.get("order"),
@@ -2385,8 +2396,9 @@ def api_wardy_events():
             "game_level":  ev.get("gameLevel") or ev.get("game_level"),
             "data":        ev.get("data") or {},
         })
-        saved += 1
-    return jsonify({"ok": True, "saved": saved}), 201
+        saved += 1 if result else 0
+        failed += 0 if result else 1
+    return _batch_response(len(events), saved, invalid, failed)
 
 # ── NeuroBreeze API ────────────────────────────────────
 @app.route("/api/neurobreeze/eeg", methods=["POST"])
@@ -2398,12 +2410,13 @@ def api_neurobreeze_eeg():
     if not body:
         return jsonify({"error":"No JSON body"}), 400
     records = body if isinstance(body, list) else [body]
-    saved = 0
+    saved = invalid = failed = 0
     for r in records:
         if not r.get("user_name"):
+            invalid += 1
             continue
         sid = str(_uuid.uuid4())
-        sb("POST", "neurobreeze_eeg", data={
+        result = sb("POST", "neurobreeze_eeg", data={
             "id":                    sid,
             "project_id":            r.get("project_id") or None,
             "user_name":             str(r.get("user_name","")).strip(),
@@ -2416,8 +2429,9 @@ def api_neurobreeze_eeg():
             "right_alpha_indicator": r.get("rightAlphaIndicatorValue"),
             "alpha_indicator":       r.get("AlphaIndicatorValue"),
         })
-        saved += 1
-    return jsonify({"ok": True, "saved": saved}), 201
+        saved += 1 if result else 0
+        failed += 0 if result else 1
+    return _batch_response(len(records), saved, invalid, failed)
 
 @app.route("/api/neurobreeze/meditation", methods=["POST"])
 @csrf.exempt
@@ -2428,12 +2442,13 @@ def api_neurobreeze_meditation():
     if not body:
         return jsonify({"error":"No JSON body"}), 400
     records = body if isinstance(body, list) else [body]
-    saved = 0
+    saved = invalid = failed = 0
     for r in records:
         if not r.get("user_name"):
+            invalid += 1
             continue
         sid = str(_uuid.uuid4())
-        sb("POST", "neurobreeze_meditation", data={
+        result = sb("POST", "neurobreeze_meditation", data={
             "id":                        sid,
             "project_id":                r.get("project_id") or None,
             "user_name":                 str(r.get("user_name","")).strip(),
@@ -2456,8 +2471,9 @@ def api_neurobreeze_meditation():
             "alpha_indicator_increase":  r.get("Alpha_indi_Increase"),
             "alpha_progress_rate":       r.get("Alpha_Progress_Rate"),
         })
-        saved += 1
-    return jsonify({"ok": True, "saved": saved}), 201
+        saved += 1 if result else 0
+        failed += 0 if result else 1
+    return _batch_response(len(records), saved, invalid, failed)
 
 # ── Mind Mate 후속조사(f/u) 수신 API ─────────────────────
 # 마인드메이트 앱의 후속조사 로그를 서버로 받는 엔드포인트.
@@ -2480,13 +2496,14 @@ def api_mindmate_followup():
     if not body:
         return jsonify({"error":"No JSON body"}), 400
     records = body if isinstance(body, list) else [body]
-    saved = 0
+    saved = invalid = failed = 0
     for r in records:
         if not isinstance(r, dict):
+            invalid += 1
             continue
         # {data:{...}} 래핑 형태와 평평한 형태 모두 허용
         payload = r.get("data") if isinstance(r.get("data"), dict) else r
-        sb("POST", "mindmate_followup", data={
+        result = sb("POST", "mindmate_followup", data={
             "project_id":     _pick(r, "project_id"),
             "user_name":      str(_pick(r, "user_name","name","이름","성함","참여자","participant","participant_id") or "").strip(),
             "followup_round": _pick(r, "followup_round","round","회차","wave","fu_round"),
@@ -2494,8 +2511,9 @@ def api_mindmate_followup():
             "source":         _pick(r, "source") or "apps_script",
             "data":           payload,
         })
-        saved += 1
-    return jsonify({"ok": True, "saved": saved}), 201
+        saved += 1 if result else 0
+        failed += 0 if result else 1
+    return _batch_response(len(records), saved, invalid, failed)
 
 # ── Wardy 이벤트 뷰어 ─────────────────────────────────
 @app.route("/portal/wardy")
