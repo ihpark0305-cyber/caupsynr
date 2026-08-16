@@ -548,6 +548,29 @@ def _project_access_ok(project_id, email):
              params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}&select=role")
     return bool(row)
 
+def _delete_owned_rows(table, ids, redirect_endpoint, **redirect_kwargs):
+    """Delete rows from an app-log table (wardy_events, neurobreeze_*, mindmate_followup)
+    by id, but only ones whose project the session researcher can access. Rows with no
+    project_id (never assigned to a project) are deletable by any logged-in researcher —
+    there's no project to protect. Returns a redirect with a flash summary."""
+    email = session["researcher"]
+    deleted, skipped = 0, 0
+    for rid in ids:
+        rows = sb("GET", table, params=f"?id=eq.{rid}&select=id,project_id")
+        if not rows:
+            continue
+        pid = rows[0].get("project_id")
+        if pid and not _project_access_ok(pid, email):
+            skipped += 1
+            continue
+        sb("DELETE", table, params=f"?id=eq.{rid}")
+        deleted += 1
+    if skipped:
+        flash(f"{deleted}건 삭제됐습니다. ({skipped}건은 권한이 없어 건너뛰었어요.)")
+    else:
+        flash(f"{deleted}건 삭제됐습니다.")
+    return redirect(url_for(redirect_endpoint, **redirect_kwargs))
+
 # ─── Site-wide ───────────────────────────────────────────────
 PROFESSOR = {
     "name":      "Yun-Jung Choi",
@@ -1383,6 +1406,8 @@ def portal_project_export_range(project_id):
 @app.route('/portal/projects/<project_id>/upload/sheets', methods=['POST'])
 @login_required
 def portal_project_upload_sheets(project_id):
+    if not _project_access_ok(project_id, session["researcher"]):
+        return jsonify({"error":"Unauthorized"}), 403
     import tempfile, openpyxl
     f = request.files.get('file')
     if not f: return jsonify({"sheets": []})
@@ -1735,6 +1760,8 @@ def portal_variable_edit(project_id, var_id):
 @app.route("/portal/projects/<project_id>/variables/<var_id>/delete", methods=["POST"])
 @login_required
 def portal_variable_delete(project_id, var_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     vrows = sb("GET","project_variables",params=f"?id=eq.{var_id}")
     vname = vrows[0]["name"] if vrows else var_id
     sb("DELETE", "project_variables", params=f"?id=eq.{var_id}")
@@ -2036,6 +2063,10 @@ def portal_files():
 @app.route("/portal/files/upload", methods=["POST"])
 @login_required
 def portal_files_upload():
+    project_id = request.form.get("project_id") or None
+    if project_id and not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_files"))
     f = request.files.get("file")
     if not f or not f.filename:
         flash("파일을 선택해주세요.", "error")
@@ -2054,7 +2085,7 @@ def portal_files_upload():
     sb("POST", "portal_files", data={
         "filename": stored, "original_name": original,
         "size": size, "researcher_email": session["researcher"],
-        "project_id": request.form.get("project_id") or None,
+        "project_id": project_id,
     })
     flash(f"'{original}' 업로드 완료")
     return redirect(url_for("portal_files"))
@@ -2463,17 +2494,22 @@ def api_mindmate_followup():
 @app.route("/portal/wardy")
 @login_required
 def portal_wardy():
-    project_id = request.args.get("project_id", "")
+    project_id = request.args.get("project_id", "").strip()
     user_name  = request.args.get("user_name", "").strip()
     state      = request.args.get("state", "").strip()
 
-    params = "?select=*&order=event_time.asc"
-    if project_id: params += f"&project_id=eq.{project_id}"
-    if user_name:  params += f"&user_name=ilike.{user_name}%25"
-    if state:      params += f"&state=ilike.{state}"
-    params += "&limit=3000"
+    if project_id and not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_wardy"))
 
-    all_events = sb("GET", "wardy_events", params=params) or []
+    if project_id:
+        params = f"?select=*&order=event_time.asc&project_id=eq.{project_id}"
+        if user_name:  params += f"&user_name=ilike.{user_name}%25"
+        if state:      params += f"&state=ilike.{state}"
+        params += "&limit=3000"
+        all_events = sb("GET", "wardy_events", params=params) or []
+    else:
+        all_events = []
     total = len(all_events)
 
     # 참여자별로 그룹핑 (가장 최근 이벤트 순 정렬)
@@ -2502,8 +2538,7 @@ def portal_wardy():
 
     projects = sb("GET", "projects", params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
 
-    state_rows = sb("GET", "wardy_events", params="?select=state&limit=2000&order=received_at.desc") or []
-    distinct_states = sorted(set(r.get("state", "") for r in state_rows if r.get("state")))
+    distinct_states = sorted(set(e.get("state", "") for e in all_events if e.get("state")))
 
     return render_template("portal_wardy.html",
         researcher=session["researcher"],
@@ -2520,20 +2555,23 @@ def portal_wardy_delete():
     if not ids:
         flash("삭제할 항목을 선택해주세요.", "error")
         return redirect(url_for("portal_wardy"))
-    for eid in ids:
-        sb("DELETE", "wardy_events", params=f"?id=eq.{eid}")
-    flash(f"{len(ids)}건 삭제됐습니다.")
-    return redirect(url_for("portal_wardy"))
+    return _delete_owned_rows("wardy_events", ids, "portal_wardy")
 
 @app.route("/portal/wardy/export")
 @login_required
 def portal_wardy_export():
-    project_id = request.args.get("project_id", "")
+    project_id = request.args.get("project_id", "").strip()
     user_name  = request.args.get("user_name", "").strip()
     state      = request.args.get("state", "").strip()
 
-    params = "?select=*&order=received_at.asc"
-    if project_id: params += f"&project_id=eq.{project_id}"
+    if not project_id:
+        flash("먼저 프로젝트를 선택해주세요.", "error")
+        return redirect(url_for("portal_wardy"))
+    if not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_wardy"))
+
+    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
     if user_name:  params += f"&user_name=ilike.{user_name}%25"
     if state:      params += f"&state=ilike.{state}"
 
@@ -2579,16 +2617,21 @@ def _nb_group_by_user(rows):
 @app.route("/portal/neurobreeze")
 @login_required
 def portal_neurobreeze():
-    project_id = request.args.get("project_id","")
+    project_id = request.args.get("project_id","").strip()
     user_name  = request.args.get("user_name","").strip()
     tab        = request.args.get("tab","eeg")  # eeg | meditation
 
-    base_params = "?select=*&order=received_at.asc&limit=3000"
-    if project_id: base_params += f"&project_id=eq.{project_id}"
-    if user_name:  base_params += f"&user_name=ilike.{user_name}%25"
+    if project_id and not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_neurobreeze"))
 
-    eeg_rows        = sb("GET","neurobreeze_eeg",        params=base_params) or []
-    meditation_rows = sb("GET","neurobreeze_meditation",  params=base_params) or []
+    if project_id:
+        base_params = f"?select=*&order=received_at.asc&limit=3000&project_id=eq.{project_id}"
+        if user_name:  base_params += f"&user_name=ilike.{user_name}%25"
+        eeg_rows        = sb("GET","neurobreeze_eeg",        params=base_params) or []
+        meditation_rows = sb("GET","neurobreeze_meditation",  params=base_params) or []
+    else:
+        eeg_rows, meditation_rows = [], []
 
     projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
 
@@ -2608,10 +2651,7 @@ def portal_neurobreeze_eeg_delete():
     if not ids:
         flash("삭제할 항목을 선택해주세요.", "error")
         return redirect(url_for("portal_neurobreeze", tab="eeg"))
-    for eid in ids:
-        sb("DELETE","neurobreeze_eeg",params=f"?id=eq.{eid}")
-    flash(f"{len(ids)}건 삭제됐습니다.")
-    return redirect(url_for("portal_neurobreeze", tab="eeg"))
+    return _delete_owned_rows("neurobreeze_eeg", ids, "portal_neurobreeze", tab="eeg")
 
 @app.route("/portal/neurobreeze/meditation/delete", methods=["POST"])
 @login_required
@@ -2620,20 +2660,23 @@ def portal_neurobreeze_meditation_delete():
     if not ids:
         flash("삭제할 항목을 선택해주세요.", "error")
         return redirect(url_for("portal_neurobreeze", tab="meditation"))
-    for eid in ids:
-        sb("DELETE","neurobreeze_meditation",params=f"?id=eq.{eid}")
-    flash(f"{len(ids)}건 삭제됐습니다.")
-    return redirect(url_for("portal_neurobreeze", tab="meditation"))
+    return _delete_owned_rows("neurobreeze_meditation", ids, "portal_neurobreeze", tab="meditation")
 
 @app.route("/portal/neurobreeze/export")
 @login_required
 def portal_neurobreeze_export():
-    project_id = request.args.get("project_id","")
+    project_id = request.args.get("project_id","").strip()
     user_name  = request.args.get("user_name","").strip()
     tab        = request.args.get("tab","eeg")
 
-    params = "?select=*&order=received_at.asc"
-    if project_id: params += f"&project_id=eq.{project_id}"
+    if not project_id:
+        flash("먼저 프로젝트를 선택해주세요.", "error")
+        return redirect(url_for("portal_neurobreeze", tab=tab))
+    if not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_neurobreeze", tab=tab))
+
+    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
     if user_name:  params += f"&user_name=ilike.{user_name}%25"
 
     buf = io.StringIO()
@@ -2685,13 +2728,19 @@ def _mm_field_keys(rows):
 @app.route("/portal/mindmate")
 @login_required
 def portal_mindmate():
-    project_id = request.args.get("project_id","")
+    project_id = request.args.get("project_id","").strip()
     user_name  = request.args.get("user_name","").strip()
 
-    params = "?select=*&order=received_at.asc&limit=5000"
-    if project_id: params += f"&project_id=eq.{project_id}"
-    if user_name:  params += f"&user_name=ilike.{user_name}%25"
-    rows = sb("GET","mindmate_followup",params=params) or []
+    if project_id and not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_mindmate"))
+
+    if project_id:
+        params = f"?select=*&order=received_at.asc&limit=5000&project_id=eq.{project_id}"
+        if user_name:  params += f"&user_name=ilike.{user_name}%25"
+        rows = sb("GET","mindmate_followup",params=params) or []
+    else:
+        rows = []
 
     # user_name 기준 그룹핑(최근 응답자 먼저)
     from collections import OrderedDict
@@ -2722,18 +2771,20 @@ def portal_mindmate_delete():
     if not ids:
         flash("삭제할 항목을 선택해주세요.", "error")
         return redirect(url_for("portal_mindmate"))
-    for eid in ids:
-        sb("DELETE","mindmate_followup",params=f"?id=eq.{eid}")
-    flash(f"{len(ids)}건 삭제됐습니다.")
-    return redirect(url_for("portal_mindmate"))
+    return _delete_owned_rows("mindmate_followup", ids, "portal_mindmate")
 
 @app.route("/portal/mindmate/export")
 @login_required
 def portal_mindmate_export():
-    project_id = request.args.get("project_id","")
+    project_id = request.args.get("project_id","").strip()
     user_name  = request.args.get("user_name","").strip()
-    params = "?select=*&order=received_at.asc"
-    if project_id: params += f"&project_id=eq.{project_id}"
+    if not project_id:
+        flash("먼저 프로젝트를 선택해주세요.", "error")
+        return redirect(url_for("portal_mindmate"))
+    if not _project_access_ok(project_id, session["researcher"]):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_mindmate"))
+    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
     if user_name:  params += f"&user_name=ilike.{user_name}%25"
     rows = sb("GET","mindmate_followup",params=params) or []
 
@@ -2947,10 +2998,13 @@ def portal_measurement_edit(project_id, m_id):
 @app.route("/portal/projects/<project_id>/participants/bulk-group", methods=["POST"])
 @login_required
 def portal_participants_bulk_group(project_id):
+    _, err = _require_project_owner(project_id)
+    if err: return err
     ids = request.form.getlist("participant_ids")
     group_name = request.form.get("group_name","").strip() or None
     for pid in ids:
-        sb("PATCH","project_participants",data={"group_name": group_name},params=f"?id=eq.{pid}")
+        sb("PATCH","project_participants",data={"group_name": group_name},
+           params=f"?id=eq.{pid}&project_id=eq.{project_id}")
     flash(f"{len(ids)}명의 그룹이 변경됐어요.")
     return redirect(url_for("portal_project", project_id=project_id, _anchor="tab-participants"))
 
@@ -3009,8 +3063,7 @@ def portal_analytics_data():
     project_id = request.args.get("project_id", "").strip()
     if not project_id:
         return jsonify({"error": "project_id required"}), 400
-    proj = sb("GET", "projects", params=f"?id=eq.{project_id}&researcher_email=eq.{email}")
-    if not proj:
+    if not _project_access_ok(project_id, email):
         return jsonify({"error": "unauthorized"}), 403
     participants = sb("GET", "project_participants", params=f"?project_id=eq.{project_id}") or []
     p_map = {p["id"]: p for p in (participants if isinstance(participants, list) else [])}
@@ -3095,9 +3148,13 @@ def portal_tasks():
 @login_required
 def portal_task_new():
     me = session["researcher"]
+    project_id = request.form.get("project_id") or None
+    if project_id and not _project_access_ok(project_id, me):
+        flash("이 프로젝트에 접근 권한이 없어요.", "error")
+        return redirect(url_for("portal_tasks"))
     data = {
         "title":       request.form.get("title", "").strip(),
-        "project_id":  request.form.get("project_id") or None,
+        "project_id":  project_id,
         "description": request.form.get("description", "").strip(),
         "assigned_to": request.form.get("assigned_to", "").strip() or None,
         "due_date":    request.form.get("due_date", "").strip() or None,
