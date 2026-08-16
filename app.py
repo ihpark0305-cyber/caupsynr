@@ -16,6 +16,13 @@ from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
+APP_API_KEY = os.getenv("APP_API_KEY", "")
+if not APP_API_KEY:
+    raise SystemExit(
+        "APP_API_KEY 환경변수가 설정되지 않았습니다. "
+        "외부 앱(Wardy/NeuroBreeze/Mind Mate)이 쓸 API 키를 .env 또는 배포 환경변수에 설정한 뒤 다시 시작하세요."
+    )
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 _USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
@@ -2338,7 +2345,7 @@ def portal_all_sessions():
 @app.route("/api/sessions", methods=["POST"])
 @csrf.exempt
 def api_receive_session():
-    if request.headers.get("X-API-Key","")!=os.getenv("APP_API_KEY","tsl-app-key-2025"):
+    if request.headers.get("X-API-Key","")!=APP_API_KEY:
         return jsonify({"error":"Unauthorized"}),401
     payload = request.get_json(silent=True) or {}
     sid = str(_uuid.uuid4())
@@ -2356,7 +2363,7 @@ def api_receive_session():
 @app.route("/api/wardy/events", methods=["POST"])
 @csrf.exempt
 def api_wardy_events():
-    if request.headers.get("X-API-Key", "") != os.getenv("APP_API_KEY", "tsl-app-key-2025"):
+    if request.headers.get("X-API-Key", "") != APP_API_KEY:
         return jsonify({"error": "Unauthorized"}), 401
 
     body = request.get_json(silent=True)
@@ -2385,7 +2392,7 @@ def api_wardy_events():
 @app.route("/api/neurobreeze/eeg", methods=["POST"])
 @csrf.exempt
 def api_neurobreeze_eeg():
-    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
+    if request.headers.get("X-API-Key","") != APP_API_KEY:
         return jsonify({"error":"Unauthorized"}), 401
     body = request.get_json(silent=True)
     if not body:
@@ -2415,7 +2422,7 @@ def api_neurobreeze_eeg():
 @app.route("/api/neurobreeze/meditation", methods=["POST"])
 @csrf.exempt
 def api_neurobreeze_meditation():
-    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
+    if request.headers.get("X-API-Key","") != APP_API_KEY:
         return jsonify({"error":"Unauthorized"}), 401
     body = request.get_json(silent=True)
     if not body:
@@ -2467,7 +2474,7 @@ def _pick(d, *keys):
 @app.route("/api/mindmate/followup", methods=["POST"])
 @csrf.exempt
 def api_mindmate_followup():
-    if request.headers.get("X-API-Key","") != os.getenv("APP_API_KEY","tsl-app-key-2025"):
+    if request.headers.get("X-API-Key","") != APP_API_KEY:
         return jsonify({"error":"Unauthorized"}), 401
     body = request.get_json(silent=True)
     if not body:
@@ -2546,7 +2553,7 @@ def portal_wardy():
         project_id=project_id, user_name=user_name, state=state,
         total=total,
         distinct_states=distinct_states,
-        api_key=os.getenv("APP_API_KEY","tsl-app-key-2025"))
+        api_key=APP_API_KEY)
 
 @app.route("/portal/wardy/delete", methods=["POST"])
 @login_required
@@ -2642,7 +2649,7 @@ def portal_neurobreeze():
         eeg_total=len(eeg_rows), med_total=len(meditation_rows),
         projects=projects,
         project_id=project_id, user_name=user_name, tab=tab,
-        api_key=os.getenv("APP_API_KEY","tsl-app-key-2025"))
+        api_key=APP_API_KEY)
 
 @app.route("/portal/neurobreeze/eeg/delete", methods=["POST"])
 @login_required
@@ -2762,7 +2769,7 @@ def portal_mindmate():
         researcher=session["researcher"],
         grouped=grouped, total=len(rows),
         projects=projects, project_id=project_id, user_name=user_name,
-        api_key=os.getenv("APP_API_KEY","tsl-app-key-2025"))
+        api_key=APP_API_KEY)
 
 @app.route("/portal/mindmate/delete", methods=["POST"])
 @login_required
@@ -3091,7 +3098,7 @@ def portal_analytics_data():
 @app.route("/api/docs")
 @login_required
 def api_docs():
-    api_key = os.getenv("APP_API_KEY","tsl-app-key-2025")
+    api_key = APP_API_KEY
     return render_template("api_docs.html", researcher=session["researcher"], api_key=api_key)
 
 # ── Research topic inline edit ────────────────────────
