@@ -161,7 +161,7 @@ def init_db():
                 received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
             );
             CREATE TABLE IF NOT EXISTS audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id TEXT PRIMARY KEY,
                 researcher TEXT,
                 action TEXT NOT NULL,
                 target_table TEXT,
@@ -276,6 +276,41 @@ def init_db():
                 conn.execute("INSERT INTO accounts (email,password) VALUES (?,?)",
                              (seed_email, generate_password_hash(seed_pw)))
                 conn.commit()
+    # audit_log used to have an INTEGER PRIMARY KEY AUTOINCREMENT id locally, but audit()
+    # always writes a UUID string for id (matching the Supabase text-id schema) — so every
+    # insert failed with "datatype mismatch" and was silently swallowed. Rebuild onto a
+    # TEXT id if an old-schema table is still around.
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='audit_log'"
+        ).fetchone()
+        if row and row[0] and "INTEGER PRIMARY KEY" in row[0]:
+            try:
+                old_cols = {r[1] for r in conn.execute("PRAGMA table_info(audit_log)")}
+                copy_cols = [c for c in ("researcher","action","target_table","target_id",
+                                          "detail","before_val","after_val","created_at")
+                             if c in old_cols]
+                conn.execute("ALTER TABLE audit_log RENAME TO audit_log_old")
+                conn.execute('''CREATE TABLE audit_log (
+                    id TEXT PRIMARY KEY,
+                    researcher TEXT,
+                    action TEXT NOT NULL,
+                    target_table TEXT,
+                    target_id TEXT,
+                    detail TEXT,
+                    before_val TEXT,
+                    after_val TEXT,
+                    created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+                )''')
+                conn.execute(
+                    f"INSERT INTO audit_log (id, {','.join(copy_cols)}) "
+                    f"SELECT lower(hex(randomblob(16))), {','.join(copy_cols)} FROM audit_log_old"
+                )
+                conn.execute("DROP TABLE audit_log_old")
+                conn.commit()
+            except Exception as e:
+                print(f"audit_log 스키마 이전 실패 (감사 로그는 계속 비활성 상태일 수 있음): {e}")
+
     # Migrations: add columns if missing
     _migrations = [
         ("measurements",    "ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0"),
@@ -306,12 +341,13 @@ def init_db():
         conn.commit()
 
 def audit(action, table=None, target_id=None, detail=None, before=None, after=None):
-    """Write an entry to the audit_log table. Silently ignores errors."""
+    """Write an entry to the audit_log table. Never raises (a broken audit log
+    shouldn't break the action it's logging) — but failures are printed, not swallowed."""
     try:
         researcher = session.get("researcher", "system")
         before_val = json.dumps(before, ensure_ascii=False) if before is not None else None
         after_val  = json.dumps(after,  ensure_ascii=False) if after  is not None else None
-        sb("POST", "audit_log", data={
+        result = sb("POST", "audit_log", data={
             "id": str(_uuid.uuid4()),
             "researcher": researcher,
             "action": action,
@@ -321,8 +357,10 @@ def audit(action, table=None, target_id=None, detail=None, before=None, after=No
             "before_val": before_val,
             "after_val": after_val,
         })
-    except Exception:
-        pass
+        if not result:
+            print(f"audit() 저장 실패: action={action}, table={table}, target_id={target_id}")
+    except Exception as e:
+        print(f"audit() 예외로 기록 실패: action={action}, table={table}, target_id={target_id} — {e}")
 
 _SAFE_IDENT = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 _ALLOWED_TABLES = {
