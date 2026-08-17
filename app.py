@@ -593,6 +593,20 @@ def _project_access_ok(project_id, email):
              params=f"?project_id=eq.{project_id}&researcher_email=eq.{email}&select=role")
     return bool(row)
 
+def _accessible_projects(email):
+    """Projects `email` owns or collaborates on, deduped, as [{'id':..,'name':..}, ...]."""
+    projects = sb("GET", "projects", params=f"?researcher_email=eq.{email}&select=id,name") or []
+    have = {p["id"] for p in projects}
+    collab_rows = sb("GET", "project_collaborators", params=f"?researcher_email=eq.{email}&select=project_id") or []
+    for row in collab_rows:
+        pid = row.get("project_id")
+        if pid and pid not in have:
+            r = sb("GET", "projects", params=f"?id=eq.{pid}&select=id,name")
+            if r:
+                projects.append(r[0])
+                have.add(pid)
+    return projects
+
 def _delete_owned_rows(table, ids, redirect_endpoint, **redirect_kwargs):
     """Delete rows from an app-log table (wardy_events, neurobreeze_*, mindmate_followup)
     by id, but only ones whose project the session researcher can access. Rows with no
@@ -2561,18 +2575,12 @@ def portal_wardy():
     user_name  = request.args.get("user_name", "").strip()
     state      = request.args.get("state", "").strip()
 
-    if project_id and not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_wardy"))
-
-    if project_id:
-        params = f"?select=*&order=event_time.asc&project_id=eq.{project_id}"
-        if user_name:  params += f"&user_name=ilike.{user_name}%25"
-        if state:      params += f"&state=ilike.{state}"
-        params += "&limit=3000"
-        all_events = sb("GET", "wardy_events", params=params) or []
-    else:
-        all_events = []
+    params = "?select=*&order=event_time.asc"
+    if project_id: params += f"&project_id=eq.{project_id}"
+    if user_name:  params += f"&user_name=ilike.{user_name}%25"
+    if state:      params += f"&state=ilike.{state}"
+    params += "&limit=3000"
+    all_events = sb("GET", "wardy_events", params=params) or []
     total = len(all_events)
 
     # 참여자별로 그룹핑 (가장 최근 이벤트 순 정렬)
@@ -2599,9 +2607,8 @@ def portal_wardy():
     # 최근 이벤트가 있는 참여자 먼저
     grouped_users.sort(key=lambda g: g["last_time"], reverse=True)
 
-    projects = sb("GET", "projects", params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
-
     distinct_states = sorted(set(e.get("state", "") for e in all_events if e.get("state")))
+    projects = sb("GET", "projects", params="?select=id,name&order=created_at.desc") or []
 
     return render_template("portal_wardy.html",
         researcher=session["researcher"],
@@ -2627,17 +2634,10 @@ def portal_wardy_export():
     user_name  = request.args.get("user_name", "").strip()
     state      = request.args.get("state", "").strip()
 
-    if not project_id:
-        flash("먼저 프로젝트를 선택해주세요.", "error")
-        return redirect(url_for("portal_wardy"))
-    if not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_wardy"))
-
-    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
+    params = "?select=*&order=received_at.asc"
+    if project_id: params += f"&project_id=eq.{project_id}"
     if user_name:  params += f"&user_name=ilike.{user_name}%25"
     if state:      params += f"&state=ilike.{state}"
-
     events = sb("GET", "wardy_events", params=params) or []
 
     buf = io.StringIO()
@@ -2684,19 +2684,13 @@ def portal_neurobreeze():
     user_name  = request.args.get("user_name","").strip()
     tab        = request.args.get("tab","eeg")  # eeg | meditation
 
-    if project_id and not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_neurobreeze"))
+    base_params = "?select=*&order=received_at.asc&limit=3000"
+    if project_id: base_params += f"&project_id=eq.{project_id}"
+    if user_name:  base_params += f"&user_name=ilike.{user_name}%25"
+    eeg_rows        = sb("GET","neurobreeze_eeg",        params=base_params) or []
+    meditation_rows = sb("GET","neurobreeze_meditation",  params=base_params) or []
 
-    if project_id:
-        base_params = f"?select=*&order=received_at.asc&limit=3000&project_id=eq.{project_id}"
-        if user_name:  base_params += f"&user_name=ilike.{user_name}%25"
-        eeg_rows        = sb("GET","neurobreeze_eeg",        params=base_params) or []
-        meditation_rows = sb("GET","neurobreeze_meditation",  params=base_params) or []
-    else:
-        eeg_rows, meditation_rows = [], []
-
-    projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
+    projects = sb("GET", "projects", params="?select=id,name&order=created_at.desc") or []
 
     return render_template("portal_neurobreeze.html",
         researcher=session["researcher"],
@@ -2732,21 +2726,16 @@ def portal_neurobreeze_export():
     user_name  = request.args.get("user_name","").strip()
     tab        = request.args.get("tab","eeg")
 
-    if not project_id:
-        flash("먼저 프로젝트를 선택해주세요.", "error")
-        return redirect(url_for("portal_neurobreeze", tab=tab))
-    if not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_neurobreeze", tab=tab))
-
-    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
+    table = "neurobreeze_eeg" if tab == "eeg" else "neurobreeze_meditation"
+    params = "?select=*&order=received_at.asc"
+    if project_id: params += f"&project_id=eq.{project_id}"
     if user_name:  params += f"&user_name=ilike.{user_name}%25"
+    rows = sb("GET", table, params=params) or []
 
     buf = io.StringIO()
     w = csv.writer(buf)
 
     if tab == "eeg":
-        rows = sb("GET","neurobreeze_eeg",params=params) or []
         w.writerow(["id","project_id","user_name","session_num","recorded_at",
                     "left_alpha_power","right_alpha_power","alpha_power",
                     "left_alpha_indicator","right_alpha_indicator","alpha_indicator","received_at"])
@@ -2757,7 +2746,6 @@ def portal_neurobreeze_export():
                 "left_alpha_indicator","right_alpha_indicator","alpha_indicator","received_at"]])
         fname = "neurobreeze_eeg.csv"
     else:
-        rows = sb("GET","neurobreeze_meditation",params=params) or []
         w.writerow(["id","project_id","user_name","session_num","start_time","end_time",
                     "feedback_count","breath_mode","alpha_power","alpha_indicator",
                     "start_alpha_power_avg","end_alpha_power_avg",
@@ -2798,12 +2786,13 @@ def portal_mindmate():
         flash("이 프로젝트에 접근 권한이 없어요.", "error")
         return redirect(url_for("portal_mindmate"))
 
-    if project_id:
-        params = f"?select=*&order=received_at.asc&limit=5000&project_id=eq.{project_id}"
+    projects = _accessible_projects(session["researcher"])
+    target_pids = [project_id] if project_id else [p["id"] for p in projects]
+    rows = []
+    for pid in target_pids:
+        params = f"?select=*&order=received_at.asc&limit=5000&project_id=eq.{pid}"
         if user_name:  params += f"&user_name=ilike.{user_name}%25"
-        rows = sb("GET","mindmate_followup",params=params) or []
-    else:
-        rows = []
+        rows += sb("GET","mindmate_followup",params=params) or []
 
     # user_name 기준 그룹핑(최근 응답자 먼저)
     from collections import OrderedDict
@@ -2820,7 +2809,6 @@ def portal_mindmate():
         })
     grouped.sort(key=lambda g: g["last_time"], reverse=True)
 
-    projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name") or []
     return render_template("portal_mindmate.html",
         researcher=session["researcher"],
         grouped=grouped, total=len(rows),
@@ -2841,15 +2829,15 @@ def portal_mindmate_delete():
 def portal_mindmate_export():
     project_id = request.args.get("project_id","").strip()
     user_name  = request.args.get("user_name","").strip()
-    if not project_id:
-        flash("먼저 프로젝트를 선택해주세요.", "error")
-        return redirect(url_for("portal_mindmate"))
-    if not _project_access_ok(project_id, session["researcher"]):
+    if project_id and not _project_access_ok(project_id, session["researcher"]):
         flash("이 프로젝트에 접근 권한이 없어요.", "error")
         return redirect(url_for("portal_mindmate"))
-    params = f"?select=*&order=received_at.asc&project_id=eq.{project_id}"
-    if user_name:  params += f"&user_name=ilike.{user_name}%25"
-    rows = sb("GET","mindmate_followup",params=params) or []
+    target_pids = [project_id] if project_id else [p["id"] for p in _accessible_projects(session["researcher"])]
+    rows = []
+    for pid in target_pids:
+        params = f"?select=*&order=received_at.asc&project_id=eq.{pid}"
+        if user_name:  params += f"&user_name=ilike.{user_name}%25"
+        rows += sb("GET","mindmate_followup",params=params) or []
 
     field_keys = _mm_field_keys(rows)
     buf = io.StringIO()
