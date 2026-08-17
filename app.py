@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from collections import OrderedDict
 from functools import wraps
 from dotenv import load_dotenv
-import os, sqlite3, uuid as _uuid, json, csv, io, re, hashlib
+import os, sqlite3, uuid as _uuid, json, csv, io, re, hashlib, hmac
 import requests as _requests
 import drive_sync
 from scipy import stats as _scipy_stats
@@ -21,6 +21,13 @@ if not APP_API_KEY:
     raise SystemExit(
         "APP_API_KEY 환경변수가 설정되지 않았습니다. "
         "외부 앱(Wardy/NeuroBreeze/Mind Mate)이 쓸 API 키를 .env 또는 배포 환경변수에 설정한 뒤 다시 시작하세요."
+    )
+
+MINDMATE_PEPPER = os.getenv("MINDMATE_PEPPER", "")
+if not MINDMATE_PEPPER:
+    raise SystemExit(
+        "MINDMATE_PEPPER 환경변수가 설정되지 않았습니다. "
+        "Mind Mate 참여자 식별에 쓸 HMAC pepper 값을 .env 또는 배포 환경변수에 설정한 뒤 다시 시작하세요."
     )
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -264,6 +271,36 @@ def init_db():
                 data TEXT DEFAULT '{}',
                 received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
             );
+            CREATE TABLE IF NOT EXISTS mindmate_music_log (
+                id TEXT PRIMARY KEY,
+                participant_key TEXT NOT NULL,
+                date TEXT,
+                start_time TEXT,
+                end_time TEXT,
+                music_name TEXT,
+                music_type TEXT,
+                raw TEXT DEFAULT '{}',
+                created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+                updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS mindmate_daily_survey (
+                id TEXT PRIMARY KEY,
+                participant_key TEXT NOT NULL,
+                date TEXT NOT NULL,
+                work_type TEXT,
+                is_survey_daily TEXT,
+                servey_daily_1 TEXT, servey_daily_2 TEXT, servey_daily_3 TEXT,
+                is_mind_healing TEXT,
+                servey_mindhealing_1 TEXT,
+                is_five_days TEXT,
+                servey_five_1 TEXT, servey_five_2 TEXT, servey_five_3 TEXT, servey_five_4 TEXT,
+                servey_five_5 TEXT, servey_five_6 TEXT, servey_five_7 TEXT, servey_five_8 TEXT,
+                servey_five_9 TEXT, servey_five_10 TEXT, servey_five_11 TEXT, servey_five_12 TEXT,
+                servey_five_result TEXT,
+                raw TEXT DEFAULT '{}',
+                created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
+                updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
         ''')
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -331,6 +368,8 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_audit_created  ON audit_log(created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_proj_researcher ON projects(researcher_email)",
             "CREATE INDEX IF NOT EXISTS idx_collab_project  ON project_collaborators(project_id)",
+            "CREATE INDEX IF NOT EXISTS idx_mm_music_pkey   ON mindmate_music_log(participant_key)",
+            "CREATE INDEX IF NOT EXISTS idx_mm_survey_pkey  ON mindmate_daily_survey(participant_key)",
         ]:
             try: conn.execute(idx_stmt)
             except Exception: pass
@@ -369,7 +408,7 @@ _ALLOWED_TABLES = {
     'sessions','audit_log','project_collaborators','reset_tokens','project_protocols',
     'wardy_events','tasks',
     'neurobreeze_eeg','neurobreeze_meditation',
-    'mindmate_followup',
+    'mindmate_followup', 'mindmate_music_log', 'mindmate_daily_survey',
 }
 
 def _safe_col(col):
@@ -2527,45 +2566,130 @@ def api_neurobreeze_meditation():
         failed += 0 if result else 1
     return _batch_response(len(records), saved, invalid, failed)
 
-# ── Mind Mate 후속조사(f/u) 수신 API ─────────────────────
-# 마인드메이트 앱의 후속조사 로그를 서버로 받는 엔드포인트.
-# 지금은 구글 앱스 스크립트가 각 응답을 이 엔드포인트로 릴레이하는 방식.
-# 설문 문항 스키마를 미리 알 수 없으므로, 넘어온 payload 전체를 data(JSON)에
-# 그대로 보관하고 흔한 식별 필드(이름/제출시간/회차)만 별도 컬럼으로 뽑아둔다.
-def _pick(d, *keys):
-    for k in keys:
-        v = d.get(k)
-        if v is not None and str(v).strip() != "":
-            return v
-    return None
+# ── Mind Mate 수신 API ────────────────────────────────
+# Unity 앱이 Google Apps Script 웹앱을 거쳐 이 엔드포인트로 릴레이한다.
+# 공통 필드(UserName/Department/PhoneNumber)는 개인정보라 그대로 저장하지
+# 않고, PhoneNumber를 HMAC(pepper)으로 해시한 participant_key로만 남긴다.
+# (전화번호를 신원 기준으로 쓰는 이유: 이름/부서는 동명이인·부서이동으로
+# 흔들리지만 번호는 한 사람에게 안정적으로 붙어있다는 전제.)
+_MINDMATE_ID_NS = _uuid.UUID("f2b6f0a0-6c9e-4f7c-9a2e-2f6b6c1f9a10")
+
+def _participant_key(phone_number):
+    digits = re.sub(r"\D", "", str(phone_number or ""))
+    return hmac.new(MINDMATE_PEPPER.encode(), digits.encode(), hashlib.sha256).hexdigest()
+
+def _deterministic_id(*parts):
+    return str(_uuid.uuid5(_MINDMATE_ID_NS, "|".join(str(p) for p in parts)))
+
+_MINDMATE_PII_KEYS = {"username", "phonenumber", "department", "order"}
+
+def _strip_pii(payload):
+    return {k: v for k, v in payload.items() if k.lower() not in _MINDMATE_PII_KEYS}
+
+def _mindmate_payload():
+    """form-encoded와 JSON body 둘 다 허용."""
+    if request.form:
+        return request.form.to_dict()
+    body = request.get_json(silent=True)
+    return body if isinstance(body, dict) else {}
+
+def _merge_upsert(table, row_id, fields, overwrite_always=("raw", "updated_at")):
+    """부분 전송을 반영: 새 값이 비어있으면 기존 값을 유지한 채 upsert.
+    raw/updated_at은 항상 최신 값으로 덮어씀."""
+    existing = sb("GET", table, params=f"?id=eq.{row_id}&select=*")
+    merged = dict(existing[0]) if existing else {}
+    for k, v in fields.items():
+        if k in overwrite_always or v not in (None, ""):
+            merged[k] = v
+    merged["id"] = row_id
+    merged["updated_at"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+    return sb("POST", table, data=merged, upsert=True)
 
 @app.route("/api/mindmate/followup", methods=["POST"])
 @csrf.exempt
 def api_mindmate_followup():
     if request.headers.get("X-API-Key","") != APP_API_KEY:
         return jsonify({"error":"Unauthorized"}), 401
-    body = request.get_json(silent=True)
-    if not body:
-        return jsonify({"error":"No JSON body"}), 400
-    records = body if isinstance(body, list) else [body]
-    saved = invalid = failed = 0
-    for r in records:
-        if not isinstance(r, dict):
-            invalid += 1
-            continue
-        # {data:{...}} 래핑 형태와 평평한 형태 모두 허용
-        payload = r.get("data") if isinstance(r.get("data"), dict) else r
-        result = sb("POST", "mindmate_followup", data={
-            "project_id":     _pick(r, "project_id"),
-            "user_name":      str(_pick(r, "user_name","name","이름","성함","참여자","participant","participant_id") or "").strip(),
-            "followup_round": _pick(r, "followup_round","round","회차","wave","fu_round"),
-            "submitted_at":   _pick(r, "submitted_at","timestamp","Timestamp","제출시간","제출일시","타임스탬프","time","date"),
-            "source":         _pick(r, "source") or "apps_script",
-            "data":           payload,
+
+    payload = _mindmate_payload()
+    order = payload.get("order", "")
+    phone = payload.get("PhoneNumber", "")
+    if not phone:
+        return jsonify({"error": "PhoneNumber required"}), 400
+    pkey = _participant_key(phone)
+    raw = json.dumps(_strip_pii(payload), ensure_ascii=False)
+
+    if order == "writeData_constant":
+        date, start_time = payload.get("Date", ""), payload.get("StartTime", "")
+        if not date or not start_time:
+            return jsonify({"error": "Date/StartTime required"}), 400
+        row_id = _deterministic_id("music", pkey, date, start_time)
+        result = _merge_upsert("mindmate_music_log", row_id, {
+            "participant_key": pkey, "date": date, "start_time": start_time,
+            "end_time":  payload.get("EndTime", ""),
+            "music_name": payload.get("MusicName", ""),
+            "music_type": payload.get("MusicType", ""),
+            "raw": raw,
         })
-        saved += 1 if result else 0
-        failed += 0 if result else 1
-    return _batch_response(len(records), saved, invalid, failed)
+        return jsonify({"ok": bool(result), "id": row_id}), (201 if result else 500)
+
+    elif order == "updateData_daily":
+        date = payload.get("Date", "")
+        if not date:
+            return jsonify({"error": "Date required"}), 400
+        row_id = _deterministic_id("daily", pkey, date)
+        fields = {
+            "participant_key": pkey, "date": date,
+            "work_type":            payload.get("WorkType", ""),
+            "is_survey_daily":      payload.get("IsServeyDaily", ""),
+            "servey_daily_1":       payload.get("Servey_Daily_1", ""),
+            "servey_daily_2":       payload.get("Servey_Daily_2", ""),
+            "servey_daily_3":       payload.get("Servey_Daily_3", ""),
+            "is_mind_healing":      payload.get("IsMindHealing", ""),
+            "servey_mindhealing_1": payload.get("Servey_MindHealing_1", ""),
+            "is_five_days":         payload.get("IsFiveDays", ""),
+            "servey_five_result":   payload.get("Servey_Five_Result", ""),
+            "raw": raw,
+        }
+        for i in range(1, 13):
+            fields[f"servey_five_{i}"] = payload.get(f"Servey_Five_{i}", "")
+        result = _merge_upsert("mindmate_daily_survey", row_id, fields)
+        return jsonify({"ok": bool(result), "id": row_id}), (201 if result else 500)
+
+    elif order == "updateData_daily_json":
+        try:
+            j = json.loads(payload.get("jsonData", "{}"))
+        except (ValueError, TypeError):
+            return jsonify({"error": "invalid jsonData"}), 400
+        dates      = str(j.get("date", "")).split("|")
+        work_types = str(j.get("workType", "")).split("|")
+        is_daily   = str(j.get("isServeyDaily", "")).split("|")
+        is_healing = str(j.get("isMindHealing", "")).split("|")
+        is_five    = str(j.get("isFiveDays", "")).split("|")
+        n = int(j.get("dataCount") or len(dates))
+        saved = invalid = failed = 0
+        for i in range(n):
+            date = dates[i] if i < len(dates) else ""
+            if not date:
+                invalid += 1
+                continue
+            row_id = _deterministic_id("daily", pkey, date)
+            # 이 배치 갱신에는 실제 설문 답변이 없고 상태 플래그만 들어있음 —
+            # 답변 컬럼은 건드리지 않고(비워둠) _merge_upsert가 기존 값을 지킨다.
+            result = _merge_upsert("mindmate_daily_survey", row_id, {
+                "participant_key": pkey, "date": date,
+                "work_type":       work_types[i] if i < len(work_types) else "",
+                "is_survey_daily": is_daily[i]   if i < len(is_daily)   else "",
+                "is_mind_healing": is_healing[i] if i < len(is_healing) else "",
+                "is_five_days":    is_five[i]    if i < len(is_five)    else "",
+                "raw": raw,
+            })
+            saved += 1 if result else 0
+            failed += 0 if result else 1
+        return _batch_response(n, saved, invalid, failed)
+
+    else:
+        return jsonify({"error": f"unknown order: {order}"}), 400
 
 # ── Wardy 이벤트 뷰어 ─────────────────────────────────
 @app.route("/portal/wardy")
@@ -2764,93 +2888,79 @@ def portal_neurobreeze_export():
     return Response(buf.read(), mimetype="text/csv",
         headers={"Content-Disposition": f"attachment;filename={fname}"})
 
-# ── Mind Mate 후속조사 뷰어 ────────────────────────────
-def _mm_field_keys(rows):
-    """모든 응답의 data(JSON)에 등장한 문항 키를, 처음 등장한 순서대로 수집."""
-    keys, seen = [], set()
-    for r in rows:
-        d = r.get("data")
-        if isinstance(d, dict):
-            for k in d.keys():
-                if k not in seen:
-                    seen.add(k); keys.append(k)
-    return keys
+# ── Mind Mate 뷰어 (음원 재생 로그 / 일일 설문) ────────
+_MM_SURVEY_COLS = (
+    ["id","participant_key","date","work_type","is_survey_daily",
+     "servey_daily_1","servey_daily_2","servey_daily_3",
+     "is_mind_healing","servey_mindhealing_1","is_five_days"]
+    + [f"servey_five_{i}" for i in range(1,13)]
+    + ["servey_five_result","raw","created_at","updated_at"]
+)
+_MM_MUSIC_COLS = ["id","participant_key","date","start_time","end_time",
+                   "music_name","music_type","raw","created_at","updated_at"]
+
+def _mm_label(participant_key):
+    return "참여자-" + (participant_key or "")[:8].upper()
 
 @app.route("/portal/mindmate")
 @login_required
 def portal_mindmate():
-    project_id = request.args.get("project_id","").strip()
-    user_name  = request.args.get("user_name","").strip()
+    tab = request.args.get("tab", "survey")  # survey | music
+    q   = request.args.get("q", "").strip()  # participant_key 앞부분 검색
 
-    if project_id and not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_mindmate"))
-
-    projects = _accessible_projects(session["researcher"])
-    target_pids = [project_id] if project_id else [p["id"] for p in projects]
-    rows = []
-    for pid in target_pids:
-        params = f"?select=*&order=received_at.asc&limit=5000&project_id=eq.{pid}"
-        if user_name:  params += f"&user_name=ilike.{user_name}%25"
-        rows += sb("GET","mindmate_followup",params=params) or []
-
-    # user_name 기준 그룹핑(최근 응답자 먼저)
-    from collections import OrderedDict
-    groups = OrderedDict()
+    table = "mindmate_music_log" if tab == "music" else "mindmate_daily_survey"
+    params = "?select=*&order=date.desc&limit=3000"
+    if q: params += f"&participant_key=ilike.{q}%25"
+    rows = sb("GET", table, params=params) or []
     for r in rows:
-        groups.setdefault(r.get("user_name") or "Unknown", []).append(r)
-    grouped = []
-    for uname, recs in groups.items():
-        times = [x.get("submitted_at") or x.get("received_at") or "" for x in recs]
-        times = [t for t in times if t]
-        grouped.append({
-            "user_name": uname, "records": recs, "count": len(recs),
-            "last_time": max(times)[:16].replace("T"," ") if times else "",
-        })
-    grouped.sort(key=lambda g: g["last_time"], reverse=True)
+        r["label"] = _mm_label(r.get("participant_key"))
 
     return render_template("portal_mindmate.html",
-        researcher=session["researcher"],
-        grouped=grouped, total=len(rows),
-        projects=projects, project_id=project_id, user_name=user_name,
-        api_key=APP_API_KEY)
+        researcher=session["researcher"], tab=tab, q=q, rows=rows, total=len(rows))
 
-@app.route("/portal/mindmate/delete", methods=["POST"])
+@app.route("/portal/mindmate/music/delete", methods=["POST"])
 @login_required
-def portal_mindmate_delete():
+def portal_mindmate_music_delete():
     ids = request.form.getlist("ids")
     if not ids:
         flash("삭제할 항목을 선택해주세요.", "error")
-        return redirect(url_for("portal_mindmate"))
-    return _delete_owned_rows("mindmate_followup", ids, "portal_mindmate")
+        return redirect(url_for("portal_mindmate", tab="music"))
+    for rid in ids:
+        sb("DELETE", "mindmate_music_log", params=f"?id=eq.{rid}")
+    flash(f"{len(ids)}건 삭제됐습니다.")
+    return redirect(url_for("portal_mindmate", tab="music"))
+
+@app.route("/portal/mindmate/survey/delete", methods=["POST"])
+@login_required
+def portal_mindmate_survey_delete():
+    ids = request.form.getlist("ids")
+    if not ids:
+        flash("삭제할 항목을 선택해주세요.", "error")
+        return redirect(url_for("portal_mindmate", tab="survey"))
+    for rid in ids:
+        sb("DELETE", "mindmate_daily_survey", params=f"?id=eq.{rid}")
+    flash(f"{len(ids)}건 삭제됐습니다.")
+    return redirect(url_for("portal_mindmate", tab="survey"))
 
 @app.route("/portal/mindmate/export")
 @login_required
 def portal_mindmate_export():
-    project_id = request.args.get("project_id","").strip()
-    user_name  = request.args.get("user_name","").strip()
-    if project_id and not _project_access_ok(project_id, session["researcher"]):
-        flash("이 프로젝트에 접근 권한이 없어요.", "error")
-        return redirect(url_for("portal_mindmate"))
-    target_pids = [project_id] if project_id else [p["id"] for p in _accessible_projects(session["researcher"])]
-    rows = []
-    for pid in target_pids:
-        params = f"?select=*&order=received_at.asc&project_id=eq.{pid}"
-        if user_name:  params += f"&user_name=ilike.{user_name}%25"
-        rows += sb("GET","mindmate_followup",params=params) or []
+    tab = request.args.get("tab", "survey")
+    if tab == "music":
+        table, cols, fname = "mindmate_music_log", _MM_MUSIC_COLS, "mindmate_music_log.csv"
+    else:
+        table, cols, fname = "mindmate_daily_survey", _MM_SURVEY_COLS, "mindmate_daily_survey.csv"
+    rows = sb("GET", table, params="?select=*&order=date.desc") or []
 
-    field_keys = _mm_field_keys(rows)
     buf = io.StringIO()
-    buf.write("﻿")  # UTF-8 BOM: 한글 설문 응답을 엑셀에서 바로 열 수 있게
+    buf.write("﻿")  # UTF-8 BOM: 엑셀에서 바로 열 수 있게
     w = csv.writer(buf)
-    meta = ["id","user_name","followup_round","submitted_at","received_at"]
-    w.writerow(meta + field_keys)
+    w.writerow(cols)
     for r in rows:
-        d = r.get("data") if isinstance(r.get("data"), dict) else {}
-        w.writerow([r.get(c,"") for c in meta] + [d.get(k,"") for k in field_keys])
+        w.writerow([r.get(c,"") for c in cols])
     buf.seek(0)
     return Response(buf.read(), mimetype="text/csv; charset=utf-8",
-        headers={"Content-Disposition":"attachment;filename=mindmate_followup.csv"})
+        headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 # ── Mind Mate 실시간 뷰어 ─────────────────────────────
 # user_name은 실명일 수 있으므로 화면에는 절대 노출하지 않고,
