@@ -6,20 +6,37 @@
 .live-badge{display:inline-flex;align-items:center;gap:6px;background:#fee2e2;color:#dc2626;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:100px;}
 .live-dot{width:7px;height:7px;border-radius:50%;background:#dc2626;animation:live-pulse 1.4s infinite;}
 @keyframes live-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
-.fu-entry{border-top:1px solid var(--border);padding:14px 18px;cursor:pointer;user-select:none;}
-.fu-entry:first-child{border-top:none;}
-.fu-entry:hover{background:var(--accent-light);}
-.fu-entry-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.fu-badge{background:var(--accent-light);color:var(--accent);font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:100px;}
-.fu-time{font-size:.78rem;color:var(--muted);}
-.fu-arrow{font-size:.7rem;color:var(--fg-4);margin-left:auto;transition:transform .2s;}
-.fu-arrow.open{transform:rotate(90deg);}
-.fu-detail{padding-top:12px;cursor:default;}
-.kv-table{width:100%;border-collapse:collapse;font-size:.82rem;}
-.kv-table th{width:34%;max-width:280px;text-align:left;vertical-align:top;padding:6px 12px;font-weight:600;color:var(--fg-2);background:var(--bg);border:1px solid var(--border);word-break:break-word;}
-.kv-table td{padding:6px 12px;border:1px solid var(--border);color:var(--fg-1);vertical-align:top;word-break:break-word;white-space:pre-wrap;}
-.picker-card{display:block;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;text-decoration:none;color:var(--fg-1);transition:border-color .15s;}
-.picker-card:hover{border-color:var(--accent);}
+.mm-event{border-top:1px solid var(--border);padding:12px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.mm-event:first-child{border-top:none;}
+.mm-type{font-size:.76rem;font-weight:700;padding:3px 10px;border-radius:100px;white-space:nowrap;}
+.mm-type-music{background:rgba(79,195,247,.16);color:#0288d1;}
+.mm-type-survey{background:var(--accent-light);color:var(--accent);}
+.mm-type-sync{background:rgba(251,146,60,.16);color:#c2410c;}
+.mm-time{font-size:.78rem;color:var(--muted);margin-left:auto;}
+/* ── Sidebar layout (다른 포털 화면과 동일) ── */
+.lin-wrap{display:flex;height:calc(100vh - var(--nav-h,72px));overflow:hidden;background:var(--bg);}
+.lin-sidebar{width:232px;min-width:232px;height:100%;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
+.lin-sidebar-top{padding:14px 10px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+.lin-workspace{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;}
+.lin-workspace-icon{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--violet,#7c6fe0),#4fc3f7);display:flex;align-items:center;justify-content:center;font-size:.9rem;color:#fff;font-weight:900;flex-shrink:0;}
+.lin-workspace-name{font-size:.84rem;font-weight:700;color:var(--fg-1,#fff);line-height:1.2;}
+.lin-workspace-user{font-size:.7rem;color:var(--fg-4,rgba(255,255,255,.35));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px;}
+.lin-sidebar-scroll{flex:1;overflow-y:auto;padding:8px 0 0;scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+.lin-sidebar-bottom{padding:8px;border-top:1px solid var(--border);flex-shrink:0;}
+.lin-nav-section{margin-bottom:4px;}
+.lin-nav-item{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:.81rem;color:var(--fg-3,rgba(255,255,255,.6));text-decoration:none;border-radius:8px;margin:1px 6px;cursor:pointer;transition:background .12s,color .12s;user-select:none;}
+.lin-nav-item:hover{background:rgba(124,111,224,.09);color:var(--fg-1);}
+.lin-nav-item.active{background:rgba(124,111,224,.16);color:var(--violet-soft,#a89af0);font-weight:600;}
+.lin-nav-icon{font-size:.82rem;width:18px;text-align:center;flex-shrink:0;}
+.lin-nav-arrow{margin-left:auto;font-size:.58rem;color:var(--fg-4);transition:transform .2s;}
+.lin-nav-item.expanded .lin-nav-arrow{transform:rotate(90deg);}
+.lin-sub-group{display:none;}
+.lin-sub-group.open{display:block;}
+.lin-nav-sub{display:flex;align-items:center;gap:8px;padding:5px 10px 5px 36px;font-size:.78rem;color:var(--fg-3);text-decoration:none;border-radius:7px;margin:1px 6px;cursor:pointer;transition:background .12s,color .12s;}
+.lin-nav-sub:hover{background:rgba(124,111,224,.08);color:var(--fg-1);}
+.lin-nav-sub.active{background:rgba(124,111,224,.12);color:var(--violet-soft,#a89af0);font-weight:600;}
+.lin-main{flex:1;overflow-y:auto;min-width:0;}
+@media(max-width:640px){.lin-sidebar{display:none;}}
 </style>
 {% endblock %}
 
@@ -29,27 +46,8 @@
   <div class="lin-main">
   <div class="container" style="padding-top:28px;padding-bottom:40px;">
 
-    {% if project is none %}
-    <!-- 프로젝트 선택 -->
-    <h1 style="margin:0 0 6px;font-size:1.4rem;">🔴 Mind Mate 실시간</h1>
-    <div style="font-size:.85rem;color:var(--muted);margin-bottom:20px;">실시간으로 볼 프로젝트를 먼저 선택하세요.</div>
-    {% if projects %}
-    <div style="display:flex;flex-direction:column;gap:8px;max-width:520px;">
-      {% for p in projects %}
-      <a class="picker-card" href="{{ url_for('portal_mindmate_live', project_id=p.id) }}">{{ p.name }}</a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div style="text-align:center;padding:60px 20px;color:var(--muted);">
-      <div style="font-size:2.5rem;margin-bottom:12px;">📭</div>
-      <div>프로젝트가 아직 없습니다.</div>
-    </div>
-    {% endif %}
-
-    {% else %}
-    <!-- 실시간 뷰 -->
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
-      <h1 style="margin:0;font-size:1.4rem;">🔴 Mind Mate 실시간 · {{ project.name }}</h1>
+      <h1 style="margin:0;font-size:1.4rem;">🔴 Mind Mate 실시간</h1>
       <span class="live-badge"><span class="live-dot"></span>LIVE</span>
     </div>
     <div style="font-size:.8rem;color:var(--muted);margin-bottom:18px;" id="statusLine">불러오는 중…</div>
@@ -59,72 +57,36 @@
     </div>
 
     <script>
-    const PROJECT_ID = {{ project.id | tojson }};
-    let latestRecords = [];
-    const expandedIds = new Set();
-    const detailCache = {};
-
     function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function fmtTime(t){ return t ? String(t).slice(0,19).replace('T',' ') : ''; }
-
-    function renderDetail(id){
-      const d = detailCache[id];
-      if (!d) return '<div class="fu-detail" style="color:var(--muted);font-size:.82rem;">불러오는 중…</div>';
-      const entries = (d.data && typeof d.data === 'object') ? Object.entries(d.data) : [];
-      if (!entries.length) return '<div class="fu-detail" style="color:var(--muted);font-size:.82rem;">표시할 응답 필드가 없습니다.</div>';
-      const rows = entries.map(([k,v]) => {
-        const val = (v !== null && typeof v === 'object') ? JSON.stringify(v) : v;
-        return `<tr><th>${esc(k)}</th><td>${esc(val)}</td></tr>`;
-      }).join('');
-      return `<div class="fu-detail"><table class="kv-table">${rows}</table></div>`;
+    function fmtTime(t){
+      if (!t) return '';
+      var s = String(t).slice(0,19).replace('T',' ');
+      return s;
     }
 
-    function renderList(){
+    function renderList(events){
       const box = document.getElementById('listBox');
-      if (!latestRecords.length){
-        box.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--muted);"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div><div>아직 응답이 없습니다.</div></div>';
+      if (!events.length){
+        box.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--muted);"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div><div>최근 활동이 없습니다.</div></div>';
         return;
       }
-      box.innerHTML = latestRecords.map(r => {
-        const open = expandedIds.has(r.id);
-        return `
-        <div class="fu-entry" onclick="toggleDetail('${r.id}')">
-          <div class="fu-entry-head">
-            <span style="font-weight:700;font-size:.9rem;">${esc(r.label)}</span>
-            ${r.followup_round ? `<span class="fu-badge">회차 ${esc(r.followup_round)}</span>` : ''}
-            <span class="fu-time">제출: ${fmtTime(r.submitted_at || r.received_at)}</span>
-            <span class="fu-arrow ${open ? 'open' : ''}">▶</span>
-          </div>
-          ${open ? renderDetail(r.id) : ''}
-        </div>`;
-      }).join('');
-    }
-
-    function toggleDetail(id){
-      if (expandedIds.has(id)) {
-        expandedIds.delete(id);
-        renderList();
-        return;
-      }
-      expandedIds.add(id);
-      renderList();
-      if (!detailCache[id]) {
-        fetch(`/portal/mindmate/live/${id}?project_id=${encodeURIComponent(PROJECT_ID)}`)
-          .then(res => res.json())
-          .then(json => { if (json.ok) { detailCache[id] = json; renderList(); } })
-          .catch(() => {});
-      }
+      box.innerHTML = events.map(e => `
+        <div class="mm-event">
+          <span class="mm-type mm-type-${e.type}">${esc(e.label)}</span>
+          <span style="font-weight:700;font-size:.88rem;">${esc(e.participant)}</span>
+          <span style="font-size:.8rem;color:var(--muted);">${esc(e.date)}${e.detail ? ' · ' + esc(e.detail) : ''}</span>
+          <span class="mm-time">${fmtTime(e.at)}</span>
+        </div>`).join('');
     }
 
     async function pollData(){
       try {
-        const res = await fetch(`/portal/mindmate/live/data?project_id=${encodeURIComponent(PROJECT_ID)}`);
+        const res = await fetch('/portal/mindmate/live/data');
         const json = await res.json();
         if (json.ok) {
-          latestRecords = json.records;
-          renderList();
+          renderList(json.events);
           document.getElementById('statusLine').textContent =
-            `응답 ${latestRecords.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`;
+            `최근 ${json.events.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`;
         }
       } catch (e) {
         document.getElementById('statusLine').textContent = '갱신 실패 — 잠시 후 다시 시도합니다.';
@@ -133,12 +95,11 @@
     pollData();
     setInterval(pollData, 10000);
     </script>
-    {% endif %}
 
   </div>
   </div>
 </div>
 <script>
-function toggleNav(key){const btn=document.getElementById('nav-'+key),group=document.getElementById('sub-'+key);if(!btn||!group)return;const open=group.classList.contains('open');group.classList.toggle('open',!open);btn.classList.toggle('expanded',!open);}
+function toggleNav(key){var btn=document.getElementById('nav-'+key),group=document.getElementById('sub-'+key);if(!btn||!group)return;var open=group.classList.contains('open');group.classList.toggle('open',!open);btn.classList.toggle('expanded',!open);}
 </script>
 {% endblock %}

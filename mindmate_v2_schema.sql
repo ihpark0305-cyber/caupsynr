@@ -51,10 +51,14 @@ CREATE TABLE IF NOT EXISTS mindmate_daily_survey (
     servey_five_11       TEXT,
     servey_five_12       TEXT,
     servey_five_result   TEXT,
+    source               TEXT,  -- 'updateData_daily' | 'updateData_daily_json' — 실시간 뷰의 활동 종류 구분용
     raw                  TEXT DEFAULT '{}',
     created_at           TIMESTAMPTZ DEFAULT now(),
     updated_at           TIMESTAMPTZ DEFAULT now()
 );
+
+-- 이 스키마를 이미 실행해서 테이블이 있는 경우를 위한 보강 (없으면 no-op)
+ALTER TABLE mindmate_daily_survey ADD COLUMN IF NOT EXISTS source TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_mm_survey_pkey ON mindmate_daily_survey(participant_key);
 CREATE INDEX IF NOT EXISTS idx_mm_survey_date ON mindmate_daily_survey(date);

@@ -297,6 +297,7 @@ def init_db():
                 servey_five_5 TEXT, servey_five_6 TEXT, servey_five_7 TEXT, servey_five_8 TEXT,
                 servey_five_9 TEXT, servey_five_10 TEXT, servey_five_11 TEXT, servey_five_12 TEXT,
                 servey_five_result TEXT,
+                source TEXT,
                 raw TEXT DEFAULT '{}',
                 created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
                 updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
@@ -353,6 +354,7 @@ def init_db():
         ("measurements",    "ALTER TABLE measurements ADD COLUMN excluded INTEGER DEFAULT 0"),
         ("audit_log",       "ALTER TABLE audit_log ADD COLUMN before_val TEXT"),
         ("audit_log",       "ALTER TABLE audit_log ADD COLUMN after_val TEXT"),
+        ("mindmate_daily_survey", "ALTER TABLE mindmate_daily_survey ADD COLUMN source TEXT"),
     ]
     with sqlite3.connect(DB_PATH) as conn:
         for _, stmt in _migrations:
@@ -2593,7 +2595,7 @@ def _mindmate_payload():
     body = request.get_json(silent=True)
     return body if isinstance(body, dict) else {}
 
-def _merge_upsert(table, row_id, fields, overwrite_always=("raw", "updated_at")):
+def _merge_upsert(table, row_id, fields, overwrite_always=("raw", "updated_at", "source")):
     """부분 전송을 반영: 새 값이 비어있으면 기존 값을 유지한 채 upsert.
     raw/updated_at은 항상 최신 값으로 덮어씀."""
     existing = sb("GET", table, params=f"?id=eq.{row_id}&select=*")
@@ -2649,6 +2651,7 @@ def api_mindmate_followup():
             "servey_mindhealing_1": payload.get("Servey_MindHealing_1", ""),
             "is_five_days":         payload.get("IsFiveDays", ""),
             "servey_five_result":   payload.get("Servey_Five_Result", ""),
+            "source": "updateData_daily",
             "raw": raw,
         }
         for i in range(1, 13):
@@ -2682,6 +2685,7 @@ def api_mindmate_followup():
                 "is_survey_daily": is_daily[i]   if i < len(is_daily)   else "",
                 "is_mind_healing": is_healing[i] if i < len(is_healing) else "",
                 "is_five_days":    is_five[i]    if i < len(is_five)    else "",
+                "source": "updateData_daily_json",
                 "raw": raw,
             })
             saved += 1 if result else 0
@@ -2963,65 +2967,46 @@ def portal_mindmate_export():
         headers={"Content-Disposition": f"attachment;filename={fname}"})
 
 # ── Mind Mate 실시간 뷰어 ─────────────────────────────
-# user_name은 실명일 수 있으므로 화면에는 절대 노출하지 않고,
-# project_id+user_name의 해시로 만든 고정 가명 라벨만 보여준다.
-# (project_participants.code와는 별개 체계: mindmate_followup.user_name은
-#  자유 텍스트라 참여자 등록 코드와 자동으로 연결할 방법이 없다.)
-def _mindmate_label(project_id, user_name):
-    h = hashlib.sha256(f"{project_id}|{user_name or ''}".encode()).hexdigest()[:4].upper()
-    return f"참여자-{h}"
+# 두 테이블(음원 재생 / 일일 설문·동기화)의 최근 활동을 시간순으로 합쳐서
+# "지금 누가 쓰고 있는지" 보여준다. project_id 개념이 없어 로그인만 확인.
+_MM_ACTIVITY_TYPES = {
+    "music":  "🎵 음원 재생",
+    "survey": "📋 일일 설문",
+    "sync":   "🔄 동기화",
+}
 
 @app.route("/portal/mindmate/live")
 @login_required
 def portal_mindmate_live():
-    project_id = request.args.get("project_id","")
-    if not project_id:
-        projects = sb("GET","projects",params=f"?researcher_email=eq.{session['researcher']}&select=id,name&order=created_at.desc") or []
-        return render_template("portal_mindmate_live.html",
-            researcher=session["researcher"], project=None, projects=projects)
-    project, err = _require_project_owner(project_id)
-    if err: return err
-    return render_template("portal_mindmate_live.html",
-        researcher=session["researcher"], project=project, projects=None)
+    return render_template("portal_mindmate_live.html", researcher=session["researcher"])
 
 @app.route("/portal/mindmate/live/data")
 @csrf.exempt
 @login_required
 def portal_mindmate_live_data():
-    project_id = request.args.get("project_id","")
-    if not project_id or not _project_access_ok(project_id, session["researcher"]):
-        return jsonify({"error":"Unauthorized"}), 403
-    rows = sb("GET","mindmate_followup",
-        params=f"?project_id=eq.{project_id}&select=id,user_name,followup_round,submitted_at,received_at&order=received_at.desc&limit=200") or []
-    records = [{
-        "id":             r.get("id"),
-        "label":          _mindmate_label(project_id, r.get("user_name")),
-        "followup_round": r.get("followup_round"),
-        "submitted_at":   r.get("submitted_at"),
-        "received_at":    r.get("received_at"),
-    } for r in rows]
-    return jsonify({"ok": True, "records": records})
+    music  = sb("GET","mindmate_music_log",
+        params="?select=id,participant_key,date,music_name,updated_at&order=updated_at.desc&limit=50") or []
+    survey = sb("GET","mindmate_daily_survey",
+        params="?select=id,participant_key,date,work_type,source,updated_at&order=updated_at.desc&limit=50") or []
 
-@app.route("/portal/mindmate/live/<record_id>")
-@csrf.exempt
-@login_required
-def portal_mindmate_live_detail(record_id):
-    project_id = request.args.get("project_id","")
-    if not project_id or not _project_access_ok(project_id, session["researcher"]):
-        return jsonify({"error":"Unauthorized"}), 403
-    rows = sb("GET","mindmate_followup",params=f"?id=eq.{record_id}&project_id=eq.{project_id}&select=*") or []
-    if not rows:
-        return jsonify({"error":"Not found"}), 404
-    r = rows[0]
-    label = _mindmate_label(project_id, r.get("user_name"))
-    d = r.get("data") if isinstance(r.get("data"), dict) else {}
-    audit("view_mindmate_response", "mindmate_followup", record_id, detail=f"{label} (project_id={project_id})")
-    return jsonify({
-        "ok": True, "id": record_id, "label": label,
-        "followup_round": r.get("followup_round"),
-        "submitted_at":   r.get("submitted_at"),
-        "data": d,
-    })
+    events = []
+    for r in music:
+        events.append({
+            "id": r.get("id"), "type": "music", "label": _MM_ACTIVITY_TYPES["music"],
+            "participant": _mm_label(r.get("participant_key")),
+            "date": r.get("date"), "detail": r.get("music_name") or "",
+            "at": r.get("updated_at"),
+        })
+    for r in survey:
+        kind = "sync" if r.get("source") == "updateData_daily_json" else "survey"
+        events.append({
+            "id": r.get("id"), "type": kind, "label": _MM_ACTIVITY_TYPES[kind],
+            "participant": _mm_label(r.get("participant_key")),
+            "date": r.get("date"), "detail": r.get("work_type") or "",
+            "at": r.get("updated_at"),
+        })
+    events.sort(key=lambda e: e["at"] or "", reverse=True)
+    return jsonify({"ok": True, "events": events[:50]})
 
 # ── Project meta edit ────────────────────────────────
 @app.route("/portal/projects/<project_id>/edit", methods=["POST"])
