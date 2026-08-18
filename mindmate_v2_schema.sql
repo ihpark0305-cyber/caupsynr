@@ -63,6 +63,20 @@ ALTER TABLE mindmate_daily_survey ADD COLUMN IF NOT EXISTS source TEXT;
 CREATE INDEX IF NOT EXISTS idx_mm_survey_pkey ON mindmate_daily_survey(participant_key);
 CREATE INDEX IF NOT EXISTS idx_mm_survey_date ON mindmate_daily_survey(date);
 
+-- order=appOpen (앱 실행 자체를 기록 — Unity 쪽엔 아직 없음, 추가 예정)
+-- 하루 1건으로 합치지 않고 매번 새 행. 참여자당 하루에 여러 번 열 수 있고,
+-- 실시간 화면에서는 "언제 열었는지" 자체가 신호라 upsert 대상이 아님.
+CREATE TABLE IF NOT EXISTS mindmate_app_open (
+    id              UUID PRIMARY KEY,
+    participant_key TEXT NOT NULL,
+    raw             TEXT DEFAULT '{}',
+    received_at     TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mm_open_pkey     ON mindmate_app_open(participant_key);
+CREATE INDEX IF NOT EXISTS idx_mm_open_received ON mindmate_app_open(received_at DESC);
+
 -- 서비스 롤 키로 접근하므로(anon 아님) RLS 비활성 — 다른 테이블과 동일 정책
 ALTER TABLE mindmate_music_log    DISABLE ROW LEVEL SECURITY;
 ALTER TABLE mindmate_daily_survey DISABLE ROW LEVEL SECURITY;
+ALTER TABLE mindmate_app_open     DISABLE ROW LEVEL SECURITY;

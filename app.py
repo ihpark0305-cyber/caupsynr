@@ -302,6 +302,12 @@ def init_db():
                 created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime')),
                 updated_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
             );
+            CREATE TABLE IF NOT EXISTS mindmate_app_open (
+                id TEXT PRIMARY KEY,
+                participant_key TEXT NOT NULL,
+                raw TEXT DEFAULT '{}',
+                received_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now','localtime'))
+            );
         ''')
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -372,6 +378,8 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_collab_project  ON project_collaborators(project_id)",
             "CREATE INDEX IF NOT EXISTS idx_mm_music_pkey   ON mindmate_music_log(participant_key)",
             "CREATE INDEX IF NOT EXISTS idx_mm_survey_pkey  ON mindmate_daily_survey(participant_key)",
+            "CREATE INDEX IF NOT EXISTS idx_mm_open_pkey    ON mindmate_app_open(participant_key)",
+            "CREATE INDEX IF NOT EXISTS idx_mm_open_received ON mindmate_app_open(received_at DESC)",
         ]:
             try: conn.execute(idx_stmt)
             except Exception: pass
@@ -410,7 +418,7 @@ _ALLOWED_TABLES = {
     'sessions','audit_log','project_collaborators','reset_tokens','project_protocols',
     'wardy_events','tasks',
     'neurobreeze_eeg','neurobreeze_meditation',
-    'mindmate_followup', 'mindmate_music_log', 'mindmate_daily_survey',
+    'mindmate_followup', 'mindmate_music_log', 'mindmate_daily_survey', 'mindmate_app_open',
 }
 
 def _safe_col(col):
@@ -2692,6 +2700,16 @@ def api_mindmate_followup():
             failed += 0 if result else 1
         return _batch_response(n, saved, invalid, failed)
 
+    elif order == "appOpen":
+        # 앱을 열기만 해도 보내는 신호(아직 Unity 쪽엔 없음, 추가 예정).
+        # 하루 1건으로 합치지 않고 매번 새 행 — "지금 누가 쓰고 있는지"엔
+        # 열어본 횟수/시점 자체가 의미 있어서 병합-upsert 대상이 아님.
+        result = sb("POST", "mindmate_app_open", data={
+            "participant_key": pkey,
+            "raw": raw,
+        })
+        return jsonify({"ok": bool(result)}), (201 if result else 500)
+
     else:
         return jsonify({"error": f"unknown order: {order}"}), 400
 
@@ -2977,6 +2995,7 @@ _MM_ACTIVITY_TYPES = {
     "music":  "🎵 음원 재생",
     "survey": "📋 일일 설문",
     "sync":   "🔄 동기화",
+    "open":   "📱 앱 접속",
 }
 
 @app.route("/portal/mindmate/live")
@@ -2992,6 +3011,8 @@ def portal_mindmate_live_data():
         params="?select=id,participant_key,date,music_name,updated_at&order=updated_at.desc&limit=50") or []
     survey = sb("GET","mindmate_daily_survey",
         params="?select=id,participant_key,date,work_type,source,updated_at&order=updated_at.desc&limit=50") or []
+    opens  = sb("GET","mindmate_app_open",
+        params="?select=id,participant_key,received_at&order=received_at.desc&limit=50") or []
 
     events = []
     for r in music:
@@ -3008,6 +3029,13 @@ def portal_mindmate_live_data():
             "participant": _mm_label(r.get("participant_key")),
             "date": r.get("date"), "detail": r.get("work_type") or "",
             "at": r.get("updated_at"),
+        })
+    for r in opens:
+        events.append({
+            "id": r.get("id"), "type": "open", "label": _MM_ACTIVITY_TYPES["open"],
+            "participant": _mm_label(r.get("participant_key")),
+            "date": (r.get("received_at") or "")[:10], "detail": "",
+            "at": r.get("received_at"),
         })
     events.sort(key=lambda e: e["at"] or "", reverse=True)
     return jsonify({"ok": True, "events": events[:50]})
