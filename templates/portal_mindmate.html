@@ -23,6 +23,15 @@ input[type=checkbox]{cursor:pointer;width:15px;height:15px;}
 .kv-table{width:100%;border-collapse:collapse;font-size:.82rem;margin-top:12px;}
 .kv-table th{width:34%;max-width:280px;text-align:left;vertical-align:top;padding:6px 12px;font-weight:600;color:var(--fg-2);background:var(--bg);border:1px solid var(--border);word-break:break-word;}
 .kv-table td{padding:6px 12px;border:1px solid var(--border);color:var(--fg-1);vertical-align:top;word-break:break-word;white-space:pre-wrap;}
+.live-badge{display:inline-flex;align-items:center;gap:6px;background:#fee2e2;color:#dc2626;font-size:.72rem;font-weight:700;padding:3px 10px;border-radius:100px;}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#dc2626;animation:live-pulse 1.4s infinite;}
+@keyframes live-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+.mm-event{border-top:1px solid var(--border);padding:12px 18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.mm-event:first-child{border-top:none;}
+.mm-type{font-size:.76rem;font-weight:700;padding:3px 10px;border-radius:100px;white-space:nowrap;}
+.mm-type-music{background:rgba(79,195,247,.16);color:#0288d1;}
+.mm-type-survey{background:var(--accent-light);color:var(--accent);}
+.mm-type-sync{background:rgba(251,146,60,.16);color:#c2410c;}
 /* ── Sidebar layout (다른 포털 화면과 동일) ── */
 .lin-wrap{display:flex;height:calc(100vh - var(--nav-h,72px));overflow:hidden;background:var(--bg);}
 .lin-sidebar{width:232px;min-width:232px;height:100%;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
@@ -59,14 +68,59 @@ input[type=checkbox]{cursor:pointer;width:15px;height:15px;}
 
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px;">
       <h1 style="margin:0;font-size:1.4rem;">💬 Mind Mate</h1>
+      {% if tab == 'live' %}
+      <span class="live-badge"><span class="live-dot"></span>LIVE</span>
+      {% else %}
       <a href="{{ url_for('portal_mindmate_export', tab=tab) }}"
          class="btn btn-outline" style="padding:7px 16px;font-size:.84rem;">⬇ CSV 내보내기</a>
+      {% endif %}
     </div>
 
     <div class="mm-tabs">
-      <a href="{{ url_for('portal_mindmate', tab='survey') }}" class="mm-tab {% if tab!='music' %}active{% endif %}">📋 일일 설문</a>
+      <a href="{{ url_for('portal_mindmate', tab='survey') }}" class="mm-tab {% if tab not in ['music','live'] %}active{% endif %}">📋 일일 설문</a>
       <a href="{{ url_for('portal_mindmate', tab='music') }}" class="mm-tab {% if tab=='music' %}active{% endif %}">🎵 음원 재생 로그</a>
+      <a href="{{ url_for('portal_mindmate', tab='live') }}" class="mm-tab {% if tab=='live' %}active{% endif %}">🔴 실시간</a>
     </div>
+
+    {% if tab == 'live' %}
+    <div style="font-size:.8rem;color:var(--muted);margin-bottom:18px;" id="statusLine">불러오는 중…</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;" id="liveListBox">
+      <div style="text-align:center;padding:60px 20px;color:var(--muted);">불러오는 중…</div>
+    </div>
+    <script>
+    function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function fmtTime(t){ return t ? String(t).slice(0,19).replace('T',' ') : ''; }
+    function renderLiveList(events){
+      const box = document.getElementById('liveListBox');
+      if (!events.length){
+        box.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--muted);"><div style="font-size:2.5rem;margin-bottom:12px;">📭</div><div>최근 활동이 없습니다.</div></div>';
+        return;
+      }
+      box.innerHTML = events.map(e => `
+        <div class="mm-event">
+          <span class="mm-type mm-type-${e.type}">${esc(e.label)}</span>
+          <span style="font-weight:700;font-size:.88rem;">${esc(e.participant)}</span>
+          <span style="font-size:.8rem;color:var(--muted);">${esc(e.date)}${e.detail ? ' · ' + esc(e.detail) : ''}</span>
+          <span style="font-size:.78rem;color:var(--muted);margin-left:auto;">${fmtTime(e.at)}</span>
+        </div>`).join('');
+    }
+    async function pollLiveData(){
+      try {
+        const res = await fetch('/portal/mindmate/live/data');
+        const json = await res.json();
+        if (json.ok) {
+          renderLiveList(json.events);
+          document.getElementById('statusLine').textContent =
+            `최근 ${json.events.length}건 · 마지막 갱신 ${new Date().toLocaleTimeString('ko-KR')}`;
+        }
+      } catch (e) {
+        document.getElementById('statusLine').textContent = '갱신 실패 — 잠시 후 다시 시도합니다.';
+      }
+    }
+    pollLiveData();
+    setInterval(pollLiveData, 10000);
+    </script>
+    {% else %}
 
     <!-- 필터 -->
     <form method="get" class="filter-bar">
@@ -159,6 +213,8 @@ input[type=checkbox]{cursor:pointer;width:15px;height:15px;}
       <div>아직 기록이 없습니다.</div>
       <div style="font-size:.83rem;margin-top:6px;">앱스 스크립트 릴레이가 <code>POST /api/mindmate/followup</code>로 보내면 여기에 표시됩니다.</div>
     </div>
+    {% endif %}
+
     {% endif %}
 
   </div>

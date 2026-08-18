@@ -2909,8 +2909,12 @@ def _mm_label(participant_key):
 @app.route("/portal/mindmate")
 @login_required
 def portal_mindmate():
-    tab = request.args.get("tab", "survey")  # survey | music
+    tab = request.args.get("tab", "survey")  # survey | music | live
     q   = request.args.get("q", "").strip()  # participant_key 앞부분 검색
+
+    if tab == "live":
+        return render_template("portal_mindmate.html",
+            researcher=session["researcher"], tab=tab, q=q, rows=[], total=0)
 
     table = "mindmate_music_log" if tab == "music" else "mindmate_daily_survey"
     params = "?select=*&order=date.desc&limit=3000"
@@ -2978,7 +2982,7 @@ _MM_ACTIVITY_TYPES = {
 @app.route("/portal/mindmate/live")
 @login_required
 def portal_mindmate_live():
-    return render_template("portal_mindmate_live.html", researcher=session["researcher"])
+    return redirect(url_for("portal_mindmate", tab="live"))
 
 @app.route("/portal/mindmate/live/data")
 @csrf.exempt
