@@ -1545,6 +1545,24 @@ span.ri-card-icon {
 .apd-sub-link-plain { cursor: default; }
 .apd-sub-link-plain:hover { background: rgba(124,111,224,0.14); color: var(--violet-soft); box-shadow: none; }
 
+/* Wardy privacy policy */
+.privacy-hero { padding-bottom: 54px; }
+.privacy-page { padding: 68px 0 88px; }
+.privacy-content { max-width: 760px; color: var(--fg-3); font-size: 1rem; line-height: 1.85; }
+.privacy-content > p { margin-bottom: 36px; }
+.privacy-content section { padding: 28px 0; border-top: 1px solid var(--border); }
+.privacy-content h2 { margin: 0 0 14px; color: var(--fg-1); font-size: 1.25rem; }
+.privacy-content p { margin: 0 0 12px; }
+.privacy-content ul { margin: 0; padding-left: 1.25rem; }
+.privacy-content li + li { margin-top: 6px; }
+.privacy-content strong { color: var(--fg-2); }
+.privacy-content dl { margin: 0; }
+.privacy-content dl > div { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 8px 0; }
+.privacy-content dt { color: var(--fg-2); font-weight: 600; }
+.privacy-content dd { margin: 0; }
+.privacy-content a { color: var(--cyan-soft); text-underline-offset: 3px; }
+@media (max-width: 560px) { .privacy-page { padding: 44px 0 64px; } .privacy-content dl > div { grid-template-columns: 1fr; gap: 2px; } }
+
 /* ═══════════════════════════════════════════════════════════════
    MODALS
    ═══════════════════════════════════════════════════════════════ */

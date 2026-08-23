@@ -1065,6 +1065,10 @@ def app_detail(key):
     if not app_data: return redirect(url_for('apps'))
     return render_template("app_detail.html", app=app_data)
 
+@app.route("/privacy/wardy")
+def wardy_privacy():
+    return render_template("wardy_privacy.html")
+
 @app.route("/contact", methods=["GET","POST"])
 def contact():
     success = False
