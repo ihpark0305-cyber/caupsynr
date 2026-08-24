@@ -1229,20 +1229,83 @@ def logout():
 @login_required
 def portal():
     email = session["researcher"]
-    projects = sb("GET","projects",params=f"?researcher_email=eq.{email}&order=created_at.desc") or []
+    # 내 프로젝트와 초대받은 프로젝트를 한 화면에서 관리한다.
+    projects = sb("GET", "projects", params=f"?researcher_email=eq.{email}&order=created_at.desc") or []
+    project_ids = {p.get("id") for p in projects if p.get("id")}
+    collab_rows = sb("GET", "project_collaborators",
+                    params=f"?researcher_email=eq.{email}&select=project_id") or []
+    for collab in collab_rows:
+        pid = collab.get("project_id")
+        if pid and pid not in project_ids:
+            rows = sb("GET", "projects", params=f"?id=eq.{pid}") or []
+            if rows:
+                projects.append(rows[0])
+                project_ids.add(pid)
+
+    project_map = {p.get("id"): p.get("name") or "이름 없는 프로젝트" for p in projects}
+    overdue_tasks, open_tasks, recent_tasks = [], [], []
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    missing_measurements = []
     for p in (projects if isinstance(projects,list) else []):
         pid = p.get("id","")
         pcs = sb("GET","project_participants",params=f"?project_id=eq.{pid}&select=id") or []
         mcs = sb("GET","measurements",params=f"?project_id=eq.{pid}&select=id") or []
         p["participant_count"] = len(pcs) if isinstance(pcs,list) else 0
         p["measurement_count"] = len(mcs) if isinstance(mcs,list) else 0
-    all_p = sb("GET","project_participants",params="?select=id") or []
-    all_m = sb("GET","measurements",params="?select=id") or []
+        if p["participant_count"] and not p["measurement_count"]:
+            missing_measurements.append(p)
+        tasks = sb("GET", "tasks", params=f"?project_id=eq.{pid}&order=due_date.asc") or []
+        for task in tasks:
+            task["project_name"] = p.get("name") or "프로젝트"
+            if task.get("status") != "done":
+                open_tasks.append(task)
+                if task.get("due_date") and task["due_date"] < today:
+                    overdue_tasks.append(task)
+                recent_tasks.append(task)
+
+    recent_tasks.sort(key=lambda task: task.get("due_date") or "9999-12-31")
+
+    # 원본 참여자 이름은 홈에 노출하지 않고, 활동 종류와 수신 시각만 보여준다.
+    recent_activity = []
+    activity_sources = [
+        ("wardy_events", "🎮 Wardy", "received_at", True),
+        ("neurobreeze_eeg", "🧠 NeuroBreeze EEG", "received_at", True),
+        ("neurobreeze_meditation", "🧠 NeuroBreeze 명상", "received_at", True),
+        ("mindmate_app_open", "💬 Mind Mate 접속", "received_at", False),
+        ("mindmate_music_log", "💬 Mind Mate 음원", "updated_at", False),
+        ("mindmate_daily_survey", "💬 Mind Mate 설문", "updated_at", False),
+    ]
+    for table, label, time_col, has_project in activity_sources:
+        select = f"project_id,{time_col}" if has_project else time_col
+        rows = sb("GET", table, params=f"?select={select}&order={time_col}.desc&limit=6") or []
+        for row in rows:
+            recent_activity.append({
+                "label": label,
+                "at": row.get(time_col) or "",
+                "project_name": project_map.get(row.get("project_id"), "앱 활동") if has_project else "Mind Mate",
+            })
+    recent_activity.sort(key=lambda item: item["at"], reverse=True)
+
+    # 앱 로그 중 프로젝트가 비어 있는 행은 연구자가 먼저 분류해야 하는 데이터다.
+    unassigned_app_records = 0
+    for table in ("wardy_events", "neurobreeze_eeg", "neurobreeze_meditation"):
+        rows = sb("GET", table, params="?select=project_id&limit=5000") or []
+        unassigned_app_records += sum(1 for row in rows if not row.get("project_id"))
+
+    total_participants = sum(p.get("participant_count", 0) for p in projects)
+    total_measurements = sum(p.get("measurement_count", 0) for p in projects)
     return render_template("portal.html",
         researcher=email,
         projects=projects if isinstance(projects,list) else [],
-        total_participants=len(all_p) if isinstance(all_p,list) else 0,
-        total_measurements=len(all_m) if isinstance(all_m,list) else 0)
+        total_participants=total_participants,
+        total_measurements=total_measurements,
+        open_tasks=open_tasks,
+        overdue_tasks=overdue_tasks,
+        recent_tasks=recent_tasks[:5],
+        recent_activity=recent_activity[:8],
+        unassigned_app_records=unassigned_app_records,
+        missing_measurements=missing_measurements[:5],
+        today=today)
 
 @app.route("/portal/projects/new", methods=["POST"])
 @login_required

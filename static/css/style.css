@@ -202,6 +202,172 @@ body {
 
 ::selection { background: rgba(124,111,224,0.45); color: #fff; }
 
+/* ═══════════════════════════════════════════════════════════════
+   RESEARCH PORTAL — shared shell and dashboard components
+   ═══════════════════════════════════════════════════════════════ */
+.portal-mobile-nav { display: none; }
+.portal-home {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.portal-home-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 40px clamp(20px, 4vw, 56px) 64px;
+}
+.portal-home-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-5);
+  margin-bottom: 30px;
+}
+.portal-eyebrow {
+  color: var(--violet-soft);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.portal-home-title {
+  margin: 6px 0 8px;
+  font-size: clamp(1.9rem, 3vw, 2.8rem);
+  letter-spacing: -.04em;
+}
+.portal-home-subtitle { color: var(--fg-3); font-size: .92rem; }
+.portal-primary-action,
+.portal-quick-action {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease-out), background var(--t-fast), border-color var(--t-fast);
+}
+.portal-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  border-radius: var(--r-md);
+  background: var(--violet);
+  color: #fff;
+  font-size: .86rem;
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
+}
+.portal-primary-action:hover { transform: translateY(-1px); background: var(--violet-deep); }
+.portal-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 26px;
+}
+.portal-summary-card {
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.portal-summary-card.is-alert { border-color: rgba(255, 204, 107, .42); }
+.portal-summary-label { color: var(--fg-3); font-size: .76rem; font-weight: 600; }
+.portal-summary-value { margin-top: 10px; color: var(--fg-1); font-size: 1.8rem; font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+.portal-summary-note { margin-top: 8px; color: var(--fg-4); font-size: .72rem; }
+.portal-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 34px;
+}
+.portal-quick-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg-2);
+  font-size: .82rem;
+  font-weight: 650;
+  text-align: left;
+}
+.portal-quick-action:hover { border-color: var(--line-violet); background: var(--accent-light); transform: translateY(-1px); }
+.portal-quick-icon { font-size: 1.15rem; }
+.portal-dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(280px, .85fr); gap: 20px; }
+.portal-section-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.portal-section-card + .portal-section-card { margin-top: 20px; }
+.portal-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.portal-section-title { color: var(--fg-1); font-size: 1rem; font-weight: 750; letter-spacing: -.02em; }
+.portal-section-link { color: var(--violet-soft); font-size: .78rem; font-weight: 650; }
+.portal-section-link:hover { color: var(--cyan-soft); }
+.portal-project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--border); }
+.portal-project-card { min-height: 156px; padding: 20px; background: var(--surface); transition: background var(--t-fast), transform var(--t-fast) var(--ease-out); }
+.portal-project-card:hover { background: var(--bg-elev); transform: translateY(-1px); }
+.portal-project-app { color: var(--violet-soft); font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.portal-project-name { display: block; margin: 8px 0 10px; color: var(--fg-1); font-size: 1rem; font-weight: 750; letter-spacing: -.02em; }
+.portal-project-desc { display: -webkit-box; overflow: hidden; color: var(--fg-3); font-size: .78rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.portal-project-meta { display: flex; gap: 12px; margin-top: 18px; color: var(--fg-4); font-size: .72rem; }
+.portal-list { padding: 4px 20px 12px; }
+.portal-list-item { display: flex; align-items: center; gap: 10px; min-height: 48px; border-bottom: 1px solid var(--border-light); color: var(--fg-2); }
+.portal-list-item:last-child { border-bottom: 0; }
+.portal-list-icon { width: 25px; text-align: center; flex: 0 0 auto; }
+.portal-list-copy { min-width: 0; flex: 1; }
+.portal-list-main { overflow: hidden; color: var(--fg-2); font-size: .8rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.portal-list-sub { margin-top: 1px; color: var(--fg-4); font-size: .7rem; }
+.portal-list-time { color: var(--fg-4); font-size: .7rem; white-space: nowrap; }
+.portal-health { padding: 16px 20px 20px; }
+.portal-health-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
+.portal-health-item:last-child { border-bottom: 0; }
+.portal-health-item strong { display: block; color: var(--fg-2); font-size: .8rem; }
+.portal-health-item span { display: block; margin-top: 2px; color: var(--fg-4); font-size: .72rem; line-height: 1.45; }
+.portal-health-ok { padding: 30px 20px; color: var(--fg-3); font-size: .82rem; text-align: center; }
+.portal-empty { padding: 38px 20px; color: var(--fg-3); font-size: .84rem; text-align: center; }
+.portal-empty strong { display: block; margin-bottom: 6px; color: var(--fg-2); }
+
+/* Older portal templates keep their own local CSS. These safeguards make their
+   shared headers, filters, and tables feel like one product in both themes. */
+.portal-header { background: #15132c !important; border-bottom-color: rgba(255,255,255,.1) !important; }
+.portal-header h1, .portal-header h2, .portal-header h3 { color: #fff !important; }
+.lin-main .filter-bar,
+.portal-wrap .filter-bar {
+  border-color: var(--border) !important;
+  border-radius: var(--r-lg) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-sm);
+}
+.lin-main .data-table th,
+.portal-wrap .data-table th { background: var(--bg) !important; color: var(--fg-3) !important; }
+.lin-main .data-table td,
+.portal-wrap .data-table td { border-color: var(--border-light) !important; }
+.lin-main .data-table tr:hover td,
+.portal-wrap .data-table tr:hover td { background: var(--bg-elev); }
+
+@media (max-width: 960px) {
+  .portal-summary-grid, .portal-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portal-dashboard-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .lin-wrap { display: block !important; height: auto !important; min-height: calc(100vh - var(--nav-h)); overflow: visible !important; }
+  .portal-mobile-nav { position: sticky; top: var(--nav-h); z-index: 20; display: flex; gap: 2px; overflow-x: auto; padding: 8px 12px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(16px); }
+  .portal-mobile-nav a { flex: 0 0 auto; padding: 7px 10px; border-radius: var(--r-pill); color: var(--fg-3); font-size: .73rem; font-weight: 650; }
+  .portal-mobile-nav a.active { background: var(--accent-light); color: var(--violet-soft); }
+  .portal-home-inner { padding: 24px 16px 44px; }
+  .portal-home-top { align-items: stretch; flex-direction: column; }
+  .portal-primary-action { justify-content: center; }
+  .portal-summary-grid, .portal-quick-grid, .portal-project-grid { grid-template-columns: 1fr; }
+  .portal-project-card { min-height: 130px; }
+  .ncal-app { height: calc(100vh - var(--nav-h) - 43px) !important; }
+}
+
 h1, h2, h3, h4 {
   font-family: var(--font-display);
   font-weight: 700;

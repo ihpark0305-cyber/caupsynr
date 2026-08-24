@@ -1,0 +1,7 @@
+<nav class="portal-mobile-nav" aria-label="포털 모바일 메뉴">
+  <a href="{{ url_for('portal') }}" class="{% if request.endpoint=='portal' %}active{% endif %}">홈</a>
+  <a href="{{ url_for('portal_all_participants') }}" class="{% if request.endpoint=='portal_all_participants' %}active{% endif %}">참여자</a>
+  <a href="{{ url_for('portal_tasks') }}" class="{% if request.endpoint=='portal_tasks' %}active{% endif %}">일정</a>
+  <a href="{{ url_for('portal_analytics') }}" class="{% if request.endpoint in ['portal_analytics','portal_drive','portal_files'] %}active{% endif %}">데이터</a>
+  <a href="{{ url_for('portal_wardy') }}" class="{% if request.endpoint in ['portal_wardy','portal_neurobreeze','portal_mindmate'] %}active{% endif %}">앱 활동</a>
+</nav>

@@ -337,10 +337,12 @@
 {% endblock %}
 
 {% block content %}
+{% include "_portal_mobile_nav.html" %}
 <div class="ncal-app">
 
   <!-- ════ SIDEBAR ════ -->
   <aside class="ncal-sidebar">
+    <a href="{{ url_for('portal') }}" class="sidebar-nav-item" style="margin-top:8px;text-decoration:none;"><span>⌂</span> 포털 홈</a>
     <!-- Mini Calendar -->
     <div class="mini-cal-wrap">
       <div class="mini-cal-header">
