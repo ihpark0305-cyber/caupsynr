@@ -830,6 +830,24 @@ APPS = [
         "privacy_url": "/privacy/neurobreeze",
         "subsections": [],
     },
+    {
+        "key":       "mindmate",
+        "icon":      "💚",
+        "gradient":  "linear-gradient(135deg,#e96d91 0%,#9dc647 100%)",
+        "name":      "Mind Mate(TSL)",
+        "full_name": "New Nurse Stress Management",
+        "label":     "Digital Mental Health Application",
+        "desc_kr":   "Mind Mate는 신규간호사가 근무·수면·스트레스 상태를 기록하고, 명상과 바이노럴 비트 등 마음돌봄 활동을 통해 일상 속 스트레스 관리를 돕는 앱입니다.",
+        "desc_en":   "Mind Mate is a stress-management application for newly employed nurses, supporting daily work, sleep, and stress records alongside meditation and binaural-beat activities.",
+        "tags":      ["Nurse Well-being", "Stress Management", "Self-care"],
+        "screenshot": None,
+        "content_img_kr": None,
+        "content_img_en": None,
+        "dl_kr":  None,
+        "dl_en":  None,
+        "privacy_url": "/privacy/mindmate",
+        "subsections": [],
+    },
 ]
 
 # ─── Publications ────────────────────────────────────────────
@@ -1108,6 +1126,10 @@ def wardy_privacy():
 @app.route("/privacy/neurobreeze")
 def neurobreeze_privacy():
     return render_template("neurobreeze_privacy.html")
+
+@app.route("/privacy/mindmate")
+def mindmate_privacy():
+    return render_template("mindmate_privacy.html")
 
 @app.route("/contact", methods=["GET","POST"])
 def contact():
