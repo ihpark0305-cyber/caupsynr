@@ -794,6 +794,24 @@ APPS = [
             },
         ],
     },
+    {
+        "key":       "neurobreeze",
+        "icon":      "🧠",
+        "gradient":  "linear-gradient(135deg,#2fbf8b 0%,#8de7a1 100%)",
+        "name":      "NeuroBreeze",
+        "full_name": "Neurofeedback-based Meditation",
+        "label":     "Digital Mental Health Application",
+        "desc_kr":   "NeuroBreeze는 뉴로피드백 기반 명상과 호흡·바디스캔 프로그램을 통해 일상 속 마음 돌봄을 지원하는 디지털 멘탈 헬스 앱입니다.",
+        "desc_en":   "NeuroBreeze is a digital mental health application that supports everyday self-care through neurofeedback-based meditation, breathing, and body-scan programs.",
+        "tags":      ["Neurofeedback", "Meditation", "Self-care"],
+        "screenshot": "images/neurobreeze-icon.jpg",
+        "content_img_kr": None,
+        "content_img_en": None,
+        "dl_kr":  None,
+        "dl_en":  None,
+        "privacy_url": "/privacy/neurobreeze",
+        "subsections": [],
+    },
 ]
 
 # ─── Publications ────────────────────────────────────────────
@@ -1068,6 +1086,10 @@ def app_detail(key):
 @app.route("/privacy/wardy")
 def wardy_privacy():
     return render_template("wardy_privacy.html")
+
+@app.route("/privacy/neurobreeze")
+def neurobreeze_privacy():
+    return render_template("neurobreeze_privacy.html")
 
 @app.route("/contact", methods=["GET","POST"])
 def contact():

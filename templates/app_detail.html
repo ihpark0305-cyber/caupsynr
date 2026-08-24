@@ -105,6 +105,17 @@
 </section>
 {% endif %}
 
+{% if app.privacy_url %}
+<section class="apd-section apd-section-alt" style="text-align:center;">
+  <div class="container-sm">
+    <span class="label" style="display:block;margin-bottom:12px;">Privacy</span>
+    <h2 style="margin-bottom:16px;">Your data, clearly explained</h2>
+    <p style="color:var(--muted);margin-bottom:24px;">Read how {{ app.name }} handles personal information and app-use records.</p>
+    <a href="{{ app.privacy_url }}" class="btn btn-outline">Privacy Policy</a>
+  </div>
+</section>
+{% endif %}
+
 <!-- ── Mind Therapy subsections ── -->
 {% if app.subsections %}
 <section class="apd-section apd-section-alt">
