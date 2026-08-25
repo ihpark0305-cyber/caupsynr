@@ -7,9 +7,10 @@
 
 ## 0. 핵심 결론
 
-1. **`psynr.cau.ac.kr`은 이미 발급되어 있다.** 현재 Wix(`td-ccm-neg-87-45.wixdns.net` /
-   34.149.87.45)로 CNAME이 걸려 있고, 접속하면 **404**가 뜬다. 즉 신규 발급이 아니라
-   **기존 도메인의 연결 대상 변경(재지정)** 신청이 맞다.
+1. **신청 도메인은 `tsl.cau.ac.kr`(신규)로 정했다.** 조회 결과 미사용이다.
+   기존 `psynr.cau.ac.kr`은 종료된 Wix(`td-ccm-neg-87-45.wixdns.net` / 34.149.87.45)로
+   CNAME이 남아 접속 시 **404**가 뜬다. 서브도메인 탈취 위험이 있으므로 **함께 정리(삭제
+   또는 신규 도메인으로 연결 변경)를 요청**한다.
 2. **교내 웹호스팅 신청은 필요 없다.** 정보통신처 호스팅은 Windows(ASP+MSSQL) 또는
    Linux(PHP+MySQL)만 제공한다. 이 사이트는 Python/Flask + gunicorn이라 교내 호스팅
    서버에 올릴 수 없다. → **도메인 신청서만** 제출한다.
@@ -17,6 +18,10 @@
    (`caupsynr.onrender.com` → 216.24.57.7 / 216.24.57.15)이고 인바운드 고정 IP가 없다.
    다만 **기존 psynr 레코드 자체가 외부(Wix) CNAME**이므로, 같은 방식(CNAME) 등록을
    요청할 선례가 이미 있다.
+
+5. **신청 주체는 교수님이다.** 매뉴얼 3p의 서비스 대상이 "교원, 직원"이므로 종합정보시스템
+   신청서도 교수님 계정으로 작성해야 한다. 사전 문의 메일 초안은
+   [`domain-request-email.md`](./domain-request-email.md) 참고.
 4. **첨부 점검표 2종이 모두 해당된다.** 취약점 점검표는 필수이고, 로그인 기능이 있어
    개인정보처리시스템 점검표도 대상이다. 제출 전 코드 보완 6건(§4) 처리 권장.
 
@@ -44,7 +49,7 @@
 | 항목 | 기재값 |
 |---|---|
 | 웹사이트명 | Trauma Stress Lab (중앙대학교 적십자간호대학 정신건강간호연구실) |
-| 도메인명 | `psynr.cau.ac.kr` (기존 재지정) — 신규를 원할 경우 §3의 미사용 후보 |
+| 도메인명 | `tsl.cau.ac.kr` (신규) |
 | 사용 대상 구분 | 학과(연구소) 홈페이지 |
 | 용도 | 연구실 소개, 연구성과·출판물 공개, 연구용 모바일 앱(Mind Mate/Wardy/NeuroBreeze) 개인정보처리방침 게시, 연구자 전용 데이터 포털 |
 | 서버 위치 | 외부 클라우드(Render, 자체 운영) — 교내 호스팅 미사용 |
@@ -53,9 +58,10 @@
 | 회원가입·로그인 여부 | **있음** (연구자 전용 계정, 공개 회원가입 없음) → 개인정보 점검표 첨부 대상 |
 
 > 신청 사유에 넣을 문장(초안):
-> "기존 `psynr.cau.ac.kr`은 외부 Wix 서비스로 CNAME 되어 있으나 해당 사이트가 종료되어
-> 현재 404를 반환합니다. 방치 시 서브도메인 탈취 위험이 있어, 연구실이 새로 구축·운영
-> 중인 홈페이지로 연결 대상을 변경 신청합니다."
+> "연구실이 새로 구축·운영 중인 홈페이지 운영을 위해 `tsl.cau.ac.kr` 발급을 신청합니다.
+> 아울러 기존 `psynr.cau.ac.kr`은 외부 Wix 서비스로 CNAME 되어 있으나 해당 사이트가 종료되어
+> 현재 404를 반환합니다. 방치 시 서브도메인 탈취 위험이 있어 삭제 또는 신규 도메인으로의
+> 연결 변경을 함께 요청드립니다."
 
 ---
 
@@ -65,8 +71,8 @@
 
 | 도메인 | 결과 |
 |---|---|
-| `psynr.cau.ac.kr` | **사용중** — Wix CNAME, HTTP 404 |
-| `tsl.cau.ac.kr` | 미사용 |
+| `psynr.cau.ac.kr` | **사용중** — Wix CNAME, HTTP 404 (정리 요청 대상) |
+| `tsl.cau.ac.kr` | **미사용 — 신청 대상** |
 | `tslab.cau.ac.kr` | 미사용 |
 | `caupsynr.cau.ac.kr` | 미사용 |
 | `traumastresslab.cau.ac.kr` | 미사용 |
@@ -75,7 +81,7 @@
 
 | 안 | 내용 | 평가 |
 |---|---|---|
-| **A. 현행 Render 유지 + CNAME 등록** | `psynr.cau.ac.kr` → `caupsynr.onrender.com` | **추천.** 운영 부담 없음, 기존 Wix CNAME 선례 있음. 정보통신처가 A 레코드만 받는다면 216.24.57.7/15 기재 후 변경 시 재신청 필요 |
+| **A. 현행 Render 유지 + CNAME 등록** | `tsl.cau.ac.kr` → `caupsynr.onrender.com` | **추천.** 운영 부담 없음, 기존 Wix CNAME 선례 있음. 정보통신처가 A 레코드만 받는다면 216.24.57.7/15 기재 후 변경 시 재신청 필요 |
 | B. 교내 웹호스팅 이전 | Linux 호스팅(PHP/MySQL) | **불가** — Python 미지원. 사이트 전면 재작성 필요 |
 | C. 연구실 서버 + 고정 IP | dhcp.cau.ac.kr에서 고정 IP 신청 → 보안정책 등록 | 가능하지만 서버·보안 운영 부담. 신청서의 고정 IP 요건은 가장 깔끔하게 충족 |
 
@@ -97,18 +103,19 @@
 | 개인정보 최소수집 | 연구 참여자는 코드·성별·나이만 저장(가명처리), 이름·연락처 미저장 |
 | 디버그 모드 | `app.py:3759` `app.run(debug=False)` |
 
-### 신청 전 보완 권장
+### 신청 전 보완 — 처리 완료
 
-1. **SECRET_KEY 기본값 제거** — `app.py:38`에 `os.getenv("SECRET_KEY", "tsl-dev-secret-2025")`
-   하드코딩 fallback이 있다. 미설정 시 기동 실패하도록 변경.
-2. **세션 쿠키 플래그 미설정** — `SESSION_COOKIE_SECURE / HTTPONLY / SAMESITE` 설정 없음.
-3. **보안 헤더 없음** — HSTS, `X-Content-Type-Options`, `X-Frame-Options`,
-   `Referrer-Policy`, CSP 미적용.
-4. **HTTPS 강제 없음** — HTTP 접근 시 HTTPS 리다이렉트 처리 없음.
-5. **로그인 실패 처리** — rate limit이 `storage_uri="memory://"`라 인스턴스 재시작 시 초기화.
-   계정 잠금·실패 로그 부재.
-6. **dangling CNAME** — `psynr.cau.ac.kr`이 종료된 Wix로 남아 있어 서브도메인 탈취 위험.
-   재지정으로 해소.
+| 항목 | 조치 | 근거 |
+|---|---|---|
+| SECRET_KEY 하드코딩 fallback | 환경변수 미설정 시 기동 실패로 변경 | `app.py` `SECRET_KEY` 블록 |
+| 세션 쿠키 플래그 | `SESSION_COOKIE_SECURE/HTTPONLY/SAMESITE=Lax` 설정 | `app.py` app.config |
+| 보안 헤더 부재 | CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` 적용 | `security_headers()` |
+| HTTPS 미강제 | `X-Forwarded-Proto: http` 요청을 301로 HTTPS 리다이렉트 | `force_https()` |
+| 로그인 실패 처리 | 실패 시 이메일·IP 경고 로그 기록, rate limit 저장소를 `RATELIMIT_STORAGE_URI`로 분리 | `app.py` 로그인 라우트 |
+| 잔존 CNAME | `psynr.cau.ac.kr` 정리를 신청 메일에 포함 | 아래 메일 초안 |
+
+> **배포 전 필수**: Render 환경변수에 `SECRET_KEY`를 반드시 추가해야 한다. 없으면 기동 실패한다.
+> 로컬 개발은 `LOCAL_DEV=1`을 설정하면 HTTPS 강제와 Secure 쿠키가 해제된다.
 
 ### 개인정보처리시스템 점검표에서 별도로 답해야 할 것
 
@@ -123,8 +130,10 @@
 ## 5. 제출 전 체크리스트
 
 - [ ] nslookup으로 도메인 사용 여부 재확인 (§3 표 첨부 가능)
-- [ ] 보완 6건 반영 후 배포
+- [x] 보완 6건 반영 (배포 시 `SECRET_KEY` 환경변수 설정 필수)
 - [ ] 신청서 하단 「홈페이지 취약점 심층점검 가이드」 내려받아 점검표 작성
 - [ ] 「개인정보 처리시스템 안전조치 관리실태 점검표」 작성 (로그인 있음 → 필수)
 - [ ] 종합정보시스템 도메인 신청서 작성 → 점검표 2종 첨부 → 동의 → 저장 → 승인요청
-- [ ] 승인 회신 메일 수신 후 Render 커스텀 도메인에 `psynr.cau.ac.kr` 추가 및 인증서 발급 확인
+- [ ] 교수님께 사전 문의 메일 발송 요청 ([초안](./domain-request-email.md))
+- [ ] 교수님 계정으로 종합정보시스템 도메인 신청서 작성
+- [ ] 승인 회신 메일 수신 후 Render 커스텀 도메인에 `tsl.cau.ac.kr` 추가 및 인증서 발급 확인

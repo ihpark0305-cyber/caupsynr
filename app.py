@@ -30,17 +30,67 @@ if not MINDMATE_PEPPER:
         "Mind Mate 참여자 식별에 쓸 HMAC pepper 값을 .env 또는 배포 환경변수에 설정한 뒤 다시 시작하세요."
     )
 
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+if not SECRET_KEY:
+    raise SystemExit(
+        "SECRET_KEY 환경변수가 설정되지 않았습니다. "
+        "세션 서명에 쓸 임의의 긴 문자열을 .env 또는 배포 환경변수에 설정한 뒤 다시 시작하세요."
+    )
+
+# 로컬 개발(http://localhost)에서만 1로 두고, 배포 환경에서는 절대 켜지 않는다.
+LOCAL_DEV = os.getenv("LOCAL_DEV", "") == "1"
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 _USE_SUPABASE = bool(SUPABASE_URL and SUPABASE_KEY)
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "tsl-dev-secret-2025")
+app.secret_key = SECRET_KEY
 app.config['WTF_CSRF_TIME_LIMIT'] = 3600
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB upload limit
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)  # keep researchers logged in
+app.config['SESSION_COOKIE_HTTPONLY'] = True          # JS에서 세션 쿠키 접근 차단
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'         # 크로스 사이트 요청에 쿠키 미전송
+app.config['SESSION_COOKIE_SECURE'] = not LOCAL_DEV   # HTTPS 연결에서만 쿠키 전송
 csrf = CSRFProtect(app)
-limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
+# 인스턴스를 재시작해도 로그인 시도 횟수가 유지되도록 외부 저장소(Redis 등)를 쓸 수 있다.
+limiter = Limiter(get_remote_address, app=app, default_limits=[],
+                  storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"))
+
+# ─── 전송구간 보호 및 보안 헤더 ────────────────────────────────
+# 인라인 <script>/<style>와 CDN(GSAP, Chart.js, SheetJS)을 쓰고 있어 그만큼만 허용한다.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'; "
+    "object-src 'none'"
+)
+
+@app.before_request
+def force_https():
+    # Render 등 리버스 프록시 뒤에서는 원래 프로토콜이 이 헤더로 전달된다.
+    if LOCAL_DEV or request.method not in ("GET", "HEAD"):
+        return None
+    if request.headers.get("X-Forwarded-Proto", "").lower() == "http":
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
+    return None
+
+@app.after_request
+def security_headers(resp):
+    resp.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if not LOCAL_DEV:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal.db')
 DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), 'portal_files'))
@@ -1236,6 +1286,7 @@ def login():
             session.permanent = True
             session["researcher"] = email
             return redirect(url_for("portal"))
+        app.logger.warning("login failed: email=%s ip=%s", email or "(empty)", get_remote_address())
         error = "이메일 또는 비밀번호가 올바르지 않습니다."
     return render_template("login.html", error=error)
 
