@@ -1513,6 +1513,24 @@ span.ri-card-icon {
 }
 .form-group textarea { resize: vertical; min-height: 110px; }
 
+/* 개인정보 수집 동의 (문의 폼) */
+.form-consent {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 0 0 18px; padding: 12px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border); border-radius: var(--r-md);
+}
+.form-consent input[type="checkbox"] {
+  flex: none; width: 16px; height: 16px; margin: 3px 0 0;
+  accent-color: var(--violet); cursor: pointer;
+}
+.form-consent label {
+  margin: 0; font-size: .82rem; font-weight: 400; line-height: 1.6;
+  color: var(--fg-3); cursor: pointer;
+}
+.form-consent a { color: var(--violet); text-decoration: underline; }
+.form-consent:focus-within { border-color: var(--violet); }
+
 /* ═══════════════════════════════════════════════════════════════
    GALLERY PAGE
    ═══════════════════════════════════════════════════════════════ */
@@ -1722,6 +1740,10 @@ span.ri-card-icon {
 .privacy-content ul { margin: 0; padding-left: 1.25rem; }
 .privacy-content li + li { margin-top: 6px; }
 .privacy-content strong { color: var(--fg-2); }
+.privacy-content code {
+  font-size: .88em; padding: 1px 5px; border-radius: 4px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--fg-2);
+}
 .privacy-content dl { margin: 0; }
 .privacy-content dl > div { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 8px 0; }
 .privacy-content dt { color: var(--fg-2); font-weight: 600; }

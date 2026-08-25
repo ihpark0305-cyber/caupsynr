@@ -1169,6 +1169,10 @@ def app_detail(key):
     if not app_data: return redirect(url_for('apps'))
     return render_template("app_detail.html", app=app_data)
 
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
 @app.route("/privacy/wardy")
 def wardy_privacy():
     return render_template("wardy_privacy.html")
@@ -1189,13 +1193,16 @@ def contact():
         email   = request.form.get("email","").strip()
         subject = request.form.get("subject","").strip()
         message = request.form.get("message","").strip()
-        if message:
+        consent = request.form.get("privacy_consent") == "agree"
+        if not message:
+            flash("메시지를 입력해주세요.", "error")
+        elif not consent:
+            flash("개인정보 수집·이용에 동의해주셔야 문의를 보낼 수 있어요.", "error")
+        else:
             sb("POST", "contact_messages", data={
                 "name": name, "email": email, "subject": subject, "message": message
             })
             success = True
-        else:
-            flash("메시지를 입력해주세요.", "error")
     return render_template("contact.html", success=success)
 
 @app.route("/gallery")

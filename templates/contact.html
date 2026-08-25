@@ -94,6 +94,10 @@
             <label for="message">Message *</label>
             <textarea id="message" name="message" placeholder="Your message…" required></textarea>
           </div>
+          <div class="form-consent">
+            <input type="checkbox" id="privacy_consent" name="privacy_consent" value="agree" required>
+            <label for="privacy_consent">문의 응대를 위해 이름·이메일·문의 내용을 수집하며, 처리 완료 후 1년 이내 파기합니다. 수집·이용에 동의합니다. <a href="{{ url_for('privacy') }}">개인정보처리방침</a></label>
+          </div>
           <button type="submit" class="btn btn-primary" style="width:100%;">Send Message</button>
         </form>
         {% endif %}
