@@ -685,8 +685,8 @@ PROFESSOR = {
     "title":     "Professor",
     "bio":       "Professor Yun-Jung Choi is a nurse educator and researcher at the Red Cross College of Nursing, Chung-Ang University, Seoul, Korea.",
     "email":     "yunjungchoi@cau.ac.kr",
-    "office":    "+82-2-820-6907",
     "lab_phone": "+82-2-820-5986",
+    "fax":       "02-824-7961",
     "address":   "Red Cross College of Nursing, Chung-Ang University, Seoul, South Korea",
     "photo":     "images/professor-placeholder.jpg",
 }
